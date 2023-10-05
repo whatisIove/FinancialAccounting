@@ -4,15 +4,15 @@ import javafx.application.Application;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.PieChart;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.Stage;
+import javafx.util.StringConverter;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -29,6 +29,7 @@ public class FinanceManagerApp extends Application {
     private Map<Category, List<Subcategory>> categorySubcategoriesMap;
     private PieChart pieChart;
     private TableView<Transaction> transactionHistoryTableView;
+    private TableView<BalanceCategory> balanceTableView;
 
     public static void main(String[] args) {
         launch(args);
@@ -52,18 +53,18 @@ public class FinanceManagerApp extends Application {
         menuBar.getMenus().add(fileMenu);
         root.setTop(menuBar);
 
-        HBox userInfoBox = new HBox(10);
+        VBox userInfoBox = new VBox(10);
         Label userInfoLabel = new Label("Користувач: " + currentUser);
-        Label balanceLabel = new Label("Баланс: ");
-        Label balanceValueLabel = new Label();
+        userInfoLabel.setStyle("-fx-font-size: 18px;");
         balance = new SimpleDoubleProperty(0.0);
-        balanceValueLabel.textProperty().bind(balance.asString());
 
-        userInfoBox.getChildren().addAll(userInfoLabel, balanceLabel, balanceValueLabel);
+        userInfoBox.getChildren().addAll(userInfoLabel);
         root.setTop(userInfoBox);
 
         VBox transactionInputBox = new VBox(10);
+        transactionInputBox.setPadding(new Insets(20));
         Label transactionLabel = new Label("Додавання операції");
+        transactionLabel.setStyle("-fx-font-size: 18px;");
         TextField amountField = new TextField();
         amountField.setPromptText("Сума");
 
@@ -90,16 +91,31 @@ public class FinanceManagerApp extends Application {
 
         ComboBox<Category> categoryComboBox = new ComboBox<>();
         categoryComboBox.setPromptText("Виберіть категорію");
+        categoryComboBox.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(Category category) {
+                return category.getName();
+            }
+
+            @Override
+            public Category fromString(String string) {
+                return null;
+            }
+        });
         categoryComboBox.setItems(FXCollections.observableArrayList(categories));
 
-        ComboBox<Subcategory> subcategoryComboBox = new ComboBox<>();
+        ComboBox<String> subcategoryComboBox = new ComboBox<>();
         subcategoryComboBox.setPromptText("Виберіть підкатегорію");
 
         categoryComboBox.setOnAction(e -> {
             Category selectedCategory = categoryComboBox.getValue();
             if (selectedCategory != null) {
-                List<Subcategory> subcategories = categorySubcategoriesMap.get(selectedCategory);
-                subcategoryComboBox.setItems(FXCollections.observableArrayList(subcategories));
+                List<Subcategory> subcategories = selectedCategory.getSubcategories();
+                List<String> subcategoryNames = new ArrayList<>();
+                for (Subcategory subcategory : subcategories) {
+                    subcategoryNames.add(subcategory.getName());
+                }
+                subcategoryComboBox.setItems(FXCollections.observableArrayList(subcategoryNames));
                 subcategoryComboBox.setDisable(false);
                 subcategoryComboBox.getSelectionModel().clearSelection();
             } else {
@@ -113,30 +129,69 @@ public class FinanceManagerApp extends Application {
         addRecordButton.setOnAction(e -> {
             double amount = Double.parseDouble(amountField.getText());
             Category category = categoryComboBox.getValue();
-            Subcategory subcategory = subcategoryComboBox.getValue();
+            String subcategory = subcategoryComboBox.getValue();
             addTransaction(amount, category, subcategory);
         });
 
         addRecordButton.setStyle("-fx-background-color: green; -fx-text-fill: white;");
+        addRecordButton.setMaxWidth(Double.MAX_VALUE);
 
         transactionInputBox.getChildren().addAll(transactionLabel, amountField, categoryComboBox, subcategoryComboBox, addRecordButton);
         transactionInputBox.setAlignment(Pos.CENTER);
-        root.setBottom(transactionInputBox);
+        root.setLeft(transactionInputBox);
+
+        balanceTableView = createBalanceTableView();
+        balanceTableView.setMaxHeight(Double.MAX_VALUE);
+        balanceTableView.setPlaceholder(new Label("Таблиця балансів відсутня"));
+
+        VBox balanceTableBox = new VBox(10);
+        balanceTableBox.setPadding(new Insets(20));
+        Label balanceTableLabel = new Label("Таблиця балансів");
+        balanceTableLabel.setStyle("-fx-font-size: 18px;");
+        balanceTableBox.getChildren().addAll(balanceTableLabel, balanceTableView);
+        root.setCenter(balanceTableBox);
 
         transactionHistoryTableView = createTransactionHistoryTableView();
-        root.setCenter(transactionHistoryTableView);
+        transactionHistoryTableView.setMaxHeight(Double.MAX_VALUE);
+        transactionHistoryTableView.setPlaceholder(new Label("Історія операцій відсутня"));
+
+        VBox transactionHistoryBox = new VBox(10);
+        transactionHistoryBox.setPadding(new Insets(20));
+        Label transactionHistoryLabel = new Label("Історія операцій");
+        transactionHistoryLabel.setStyle("-fx-font-size: 18px;");
+        transactionHistoryBox.getChildren().addAll(transactionHistoryLabel, transactionHistoryTableView);
+        root.setBottom(transactionHistoryBox);
 
         pieChart = new PieChart();
         pieChart.setLegendVisible(false);
-        pieChart.setPrefSize(300, 300);
+        pieChart.setPrefSize(400, 400);
+        pieChart.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
-        VBox rightVBox = new VBox(10);
-        rightVBox.getChildren().add(pieChart);
-        root.setRight(rightVBox);
+        VBox pieChartBox = new VBox(10);
+        pieChartBox.setPadding(new Insets(20));
+        Label pieChartLabel = new Label("Діаграма розподілу");
+        pieChartLabel.setStyle("-fx-font-size: 18px;");
+        pieChartBox.getChildren().addAll(pieChartLabel, pieChart);
+        root.setRight(pieChartBox);
 
-        Scene scene = new Scene(root, 800, 600);
+        Scene scene = new Scene(root, 1200, 800);
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+
+    private void updateBalanceTable() {
+        BalanceCategory totalBalanceCategory = new BalanceCategory("Баланс");
+        double totalIncome = calculateTotalIncome();
+        double totalExpense = calculateTotalExpense();
+        double totalBalance = totalIncome - totalExpense;
+
+        totalBalanceCategory.setTotalIncome(totalIncome);
+        totalBalanceCategory.setTotalExpense(totalExpense);
+        totalBalanceCategory.setTotalBalance(totalBalance);
+
+        ObservableList<BalanceCategory> balanceData = FXCollections.observableArrayList(totalBalanceCategory);
+        balanceTableView.setItems(balanceData);
     }
 
     private String getUserInfo() {
@@ -158,7 +213,7 @@ public class FinanceManagerApp extends Application {
         return result;
     }
 
-    private void addTransaction(double amount, Category category, Subcategory subcategory) {
+    private void addTransaction(double amount, Category category, String subcategory) {
         if (amount != 0) {
             String operationType = category.getName();
             TextInputDialog descriptionDialog = new TextInputDialog();
@@ -170,16 +225,17 @@ public class FinanceManagerApp extends Application {
             if (descriptionResult.isPresent()) {
                 String description = descriptionResult.get();
                 String dateTime = getFormattedDateTime();
-                String transactionInfo = dateTime + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory.getName() + ", Сума: " + amount + ", Опис: " + description;
-                Transaction transaction = new Transaction(dateTime, category.getName(), subcategory.getName(), amount, description);
+                String transactionInfo = dateTime + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
+                Transaction transaction = new Transaction(dateTime, category.getName(), subcategory, amount, description);
                 transactionHistoryTableView.getItems().add(transaction);
                 if ("Витрата".equals(operationType)) {
                     balance.set(balance.get() - amount);
-                } else {
+                } else if ("Прибуток".equals(operationType)) {
                     balance.set(balance.get() + amount);
                 }
                 updatePieChart();
                 saveTransactionToFile(currentUser, transactionInfo);
+                updateBalanceTable();
             }
         }
     }
@@ -229,25 +285,93 @@ public class FinanceManagerApp extends Application {
     }
 
     private void updatePieChart() {
-        Map<String, Double> categoryAmountMap = new HashMap<>();
+        Map<String, BalanceCategory> balanceCategoryMap = new HashMap<>();
+        double totalBalance = 0.0;
+
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String category = transaction.getCategory();
+            String subcategory = transaction.getSubcategory();
             Double amount = transaction.getAmount();
-            if (categoryAmountMap.containsKey(category)) {
-                categoryAmountMap.put(category, categoryAmountMap.get(category) + amount);
-            } else {
-                categoryAmountMap.put(category, amount);
-            }
+
+            balanceCategoryMap.computeIfAbsent(category, BalanceCategory::new)
+                    .getSubcategoryBalances()
+                    .merge(subcategory, amount, Double::sum);
+
+            totalBalance += amount;
         }
 
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
-        for (Map.Entry<String, Double> entry : categoryAmountMap.entrySet()) {
-            String category = entry.getKey();
-            double amount = entry.getValue();
-            pieChartData.add(new PieChart.Data(category, Math.abs(amount)));
+
+        for (BalanceCategory balanceCategory : balanceCategoryMap.values()) {
+            String category = balanceCategory.getCategory();
+            Map<String, Double> subcategoryBalances = balanceCategory.getSubcategoryBalances();
+
+            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
+                String subcategory = subcategoryEntry.getKey();
+                double balance = subcategoryEntry.getValue();
+
+                pieChartData.add(new PieChart.Data(subcategory, Math.abs(balance)));
+            }
         }
 
         pieChart.setData(pieChartData);
+    }
+
+    private TableView<BalanceCategory> createBalanceTableView() {
+        TableView<BalanceCategory> tableView = new TableView<>();
+
+        TableColumn<BalanceCategory, String> categoryColumn = new TableColumn<>("Категорія");
+        categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
+        categoryColumn.setMinWidth(150);
+
+        TableColumn<BalanceCategory, Double> incomeColumn = new TableColumn<>("Общий доход");
+        incomeColumn.setCellValueFactory(cellData -> {
+            double totalIncome = calculateTotalIncome();
+            return new SimpleDoubleProperty(totalIncome).asObject();
+        });
+        incomeColumn.setMinWidth(100);
+
+        TableColumn<BalanceCategory, Double> expenseColumn = new TableColumn<>("Общие расходы");
+        expenseColumn.setCellValueFactory(cellData -> {
+            double totalExpense = calculateTotalExpense();
+            return new SimpleDoubleProperty(totalExpense).asObject();
+        });
+        expenseColumn.setMinWidth(100);
+
+        TableColumn<BalanceCategory, Double> balanceColumn = new TableColumn<>("Баланс");
+        balanceColumn.setCellValueFactory(cellData -> {
+            double totalBalance = calculateTotalBalance();
+            return new SimpleDoubleProperty(totalBalance).asObject();
+        });
+        balanceColumn.setMinWidth(100);
+
+        tableView.getColumns().addAll(categoryColumn, incomeColumn, expenseColumn, balanceColumn);
+
+        return tableView;
+    }
+
+    private double calculateTotalIncome() {
+        double totalIncome = 0.0;
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            if ("Прибуток".equals(transaction.getCategory())) {
+                totalIncome += transaction.getAmount();
+            }
+        }
+        return totalIncome;
+    }
+
+    private double calculateTotalExpense() {
+        double totalExpense = 0.0;
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            if ("Витрата".equals(transaction.getCategory())) {
+                totalExpense += transaction.getAmount();
+            }
+        }
+        return totalExpense;
+    }
+
+    private double calculateTotalBalance() {
+        return calculateTotalIncome() - calculateTotalExpense();
     }
 
     public static class Transaction {
@@ -302,11 +426,6 @@ public class FinanceManagerApp extends Application {
         public List<Subcategory> getSubcategories() {
             return subcategories;
         }
-
-        @Override
-        public String toString() {
-            return name;
-        }
     }
 
     public static class Subcategory {
@@ -319,10 +438,50 @@ public class FinanceManagerApp extends Application {
         public String getName() {
             return name;
         }
+    }
 
-        @Override
-        public String toString() {
-            return name;
+    public static class BalanceCategory {
+        private final String category;
+        private final Map<String, Double> subcategoryBalances;
+        private double totalIncome;
+        private double totalExpense;
+        private double totalBalance;
+
+        public BalanceCategory(String category) {
+            this.category = category;
+            this.subcategoryBalances = new HashMap<>();
+        }
+
+        public String getCategory() {
+            return category;
+        }
+
+        public Map<String, Double> getSubcategoryBalances() {
+            return subcategoryBalances;
+        }
+
+        public double getTotalIncome() {
+            return totalIncome;
+        }
+
+        public void setTotalIncome(double totalIncome) {
+            this.totalIncome = totalIncome;
+        }
+
+        public double getTotalExpense() {
+            return totalExpense;
+        }
+
+        public void setTotalExpense(double totalExpense) {
+            this.totalExpense = totalExpense;
+        }
+
+        public double getTotalBalance() {
+            return totalBalance;
+        }
+
+        public void setTotalBalance(double totalBalance) {
+            this.totalBalance = totalBalance;
         }
     }
 }
