@@ -14,10 +14,12 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class FinanceManagerApp extends Application {
@@ -27,9 +29,10 @@ public class FinanceManagerApp extends Application {
     private SimpleDoubleProperty balance;
     private ObservableList<Category> categories;
     private Map<Category, List<Subcategory>> categorySubcategoriesMap;
-    private PieChart pieChart;
     private TableView<Transaction> transactionHistoryTableView;
     private TableView<BalanceCategory> balanceTableView;
+    private PieChart pieChart;
+    private TextField timeField; // Добавляем TextField для ввода времени
 
     public static void main(String[] args) {
         launch(args);
@@ -38,7 +41,7 @@ public class FinanceManagerApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        primaryStage.setTitle("Управление финансами");
+        primaryStage.setTitle("Управління фінансами");
 
         currentUser = getUserInfo();
 
@@ -67,6 +70,14 @@ public class FinanceManagerApp extends Application {
         transactionLabel.setStyle("-fx-font-size: 18px;");
         TextField amountField = new TextField();
         amountField.setPromptText("Сума");
+
+        DatePicker datePicker = new DatePicker();
+        datePicker.setPromptText("Дата");
+        datePicker.setValue(LocalDate.now());
+
+        // Добавляем TextField для ввода времени
+        timeField = new TextField();
+        timeField.setPromptText("ЧЧ:ММ:СС");
 
         categories = FXCollections.observableArrayList(
                 new Category("Витрата", Arrays.asList(
@@ -130,13 +141,18 @@ public class FinanceManagerApp extends Application {
             double amount = Double.parseDouble(amountField.getText());
             Category category = categoryComboBox.getValue();
             String subcategory = subcategoryComboBox.getValue();
-            addTransaction(amount, category, subcategory);
+            LocalDate selectedDate = datePicker.getValue();
+            String selectedTime = timeField.getText(); // Получаем значение времени из TextField
+            LocalDateTime dateTime = selectedDate.atTime(LocalTime.parse(selectedTime));
+            addTransaction(amount, category, subcategory, dateTime);
         });
 
         addRecordButton.setStyle("-fx-background-color: green; -fx-text-fill: white;");
         addRecordButton.setMaxWidth(Double.MAX_VALUE);
 
-        transactionInputBox.getChildren().addAll(transactionLabel, amountField, categoryComboBox, subcategoryComboBox, addRecordButton);
+
+
+        transactionInputBox.getChildren().addAll(transactionLabel, amountField, datePicker, timeField, categoryComboBox, subcategoryComboBox, addRecordButton);
         transactionInputBox.setAlignment(Pos.CENTER);
         root.setLeft(transactionInputBox);
 
@@ -153,32 +169,126 @@ public class FinanceManagerApp extends Application {
 
         transactionHistoryTableView = createTransactionHistoryTableView();
         transactionHistoryTableView.setMaxHeight(Double.MAX_VALUE);
-        transactionHistoryTableView.setPlaceholder(new Label("Історія операцій відсутня"));
+        transactionHistoryTableView.setPlaceholder(new Label("Історія транзакцій відсутня"));
 
         VBox transactionHistoryBox = new VBox(10);
         transactionHistoryBox.setPadding(new Insets(20));
-        Label transactionHistoryLabel = new Label("Історія операцій");
+        Label transactionHistoryLabel = new Label("Історія транзакцій");
         transactionHistoryLabel.setStyle("-fx-font-size: 18px;");
         transactionHistoryBox.getChildren().addAll(transactionHistoryLabel, transactionHistoryTableView);
-        root.setBottom(transactionHistoryBox);
+        root.setRight(transactionHistoryBox);
 
         pieChart = new PieChart();
-        pieChart.setLegendVisible(false);
-        pieChart.setPrefSize(400, 400);
-        pieChart.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        pieChart.setTitle("Розподіл витрат за категоріями");
+        root.setBottom(pieChart);
 
-        VBox pieChartBox = new VBox(10);
-        pieChartBox.setPadding(new Insets(20));
-        Label pieChartLabel = new Label("Діаграма розподілу");
-        pieChartLabel.setStyle("-fx-font-size: 18px;");
-        pieChartBox.getChildren().addAll(pieChartLabel, pieChart);
-        root.setRight(pieChartBox);
+        primaryStage.setOnCloseRequest(e -> {
+            try {
+                saveDataToFile();
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
+        });
 
-        Scene scene = new Scene(root, 1200, 800);
+        Scene scene = new Scene(root, 1200, 768);
         primaryStage.setScene(scene);
         primaryStage.show();
+
+        try {
+            loadDataFromFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
+    private void loadDataFromFile() throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(currentUser + "_transactions.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Разбиваем строку на части, чтобы получить информацию о транзакции
+                String[] parts = line.split(" - ");
+                if (parts.length == 5) {
+                    String dateTimeStr = parts[0];
+                    String category = parts[1].split(": ")[1];
+                    String subcategory = parts[2].split(": ")[1];
+                    String amountStr = parts[3].split(": ")[1];
+                    String description = parts[4].split(": ")[1];
+
+                    // Преобразуем строку с датой и временем в LocalDateTime
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+                    LocalDateTime dateTime = LocalDateTime.parse(dateTimeStr, formatter);
+
+                    // Преобразуем строку с суммой в double
+                    double amount = Double.parseDouble(amountStr);
+
+                    // Создаем объект транзакции и добавляем его в таблицу и обновляем баланс
+                    Transaction transaction = new Transaction(dateTime, category, subcategory, amount, description);
+                    transactionHistoryTableView.getItems().add(transaction);
+                    if ("Витрата".equals(category)) {
+                        balance.set(balance.get() - amount);
+                    } else if ("Прибуток".equals(category)) {
+                        balance.set(balance.get() + amount);
+                    }
+                    updatePieChart();
+                    updateBalanceTable();
+                }
+            }
+        }
+    }
+
+    private void saveDataToFile() throws IOException {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(currentUser + "_transactions.txt"))) {
+            for (Transaction transaction : transactionHistoryTableView.getItems()) {
+                String dateTimeStr = transaction.getDateTime().format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+                String category = transaction.getCategory();
+                String subcategory = transaction.getSubcategory();
+                String amountStr = String.valueOf(transaction.getAmount());
+                String description = transaction.getDescription();
+
+                String transactionInfo = dateTimeStr + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: " + amountStr + ", Опис: " + description;
+                writer.write(transactionInfo);
+                writer.newLine();
+            }
+        }
+    }
+
+    private PieChart createPieChart() {
+        Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
+        double totalBalance = 0.0;
+
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            String category = transaction.getCategory();
+            String subcategory = transaction.getSubcategory();
+            Double amount = transaction.getAmount();
+
+            categorySubcategoryBalances
+                    .computeIfAbsent(category, k -> new HashMap<>())
+                    .merge(subcategory, amount, Double::sum);
+
+            totalBalance += amount;
+        }
+
+        PieChart chart = new PieChart();
+        for (Map.Entry<String, Map<String, Double>> categoryEntry : categorySubcategoryBalances.entrySet()) {
+            String category = categoryEntry.getKey();
+            Map<String, Double> subcategoryBalances = categoryEntry.getValue();
+            double categoryTotal = subcategoryBalances.values().stream().mapToDouble(Double::doubleValue).sum();
+
+            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
+                String subcategory = subcategoryEntry.getKey();
+                double balance = subcategoryEntry.getValue();
+
+                // Рассчитываем процент для подкатегории
+                double percentage = (balance / categoryTotal) * 100;
+                String subcategoryLabel = subcategory + " (" + String.format("%.2f%%", percentage) + ")";
+
+                // Создаем объект PieChart.Data и добавляем его в диаграмму
+                PieChart.Data subcategoryData = new PieChart.Data(subcategoryLabel, Math.abs(balance));
+                chart.getData().add(subcategoryData);
+            }
+        }
+        return chart;
+    }
 
     private void updateBalanceTable() {
         BalanceCategory totalBalanceCategory = new BalanceCategory("Баланс");
@@ -213,7 +323,7 @@ public class FinanceManagerApp extends Application {
         return result;
     }
 
-    private void addTransaction(double amount, Category category, String subcategory) {
+    private void addTransaction(double amount, Category category, String subcategory, LocalDateTime dateTime) {
         if (amount != 0) {
             String operationType = category.getName();
             TextInputDialog descriptionDialog = new TextInputDialog();
@@ -224,8 +334,8 @@ public class FinanceManagerApp extends Application {
             Optional<String> descriptionResult = descriptionDialog.showAndWait();
             if (descriptionResult.isPresent()) {
                 String description = descriptionResult.get();
-                String dateTime = getFormattedDateTime();
-                String transactionInfo = dateTime + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
+
+                String transactionInfo = dateTime.toString() + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
                 Transaction transaction = new Transaction(dateTime, category.getName(), subcategory, amount, description);
                 transactionHistoryTableView.getItems().add(transaction);
                 if ("Витрата".equals(operationType)) {
@@ -235,7 +345,49 @@ public class FinanceManagerApp extends Application {
                 }
                 updatePieChart();
                 saveTransactionToFile(currentUser, transactionInfo);
+
+                // Добавьте эту строку для обновления таблицы балансов
                 updateBalanceTable();
+            }
+        }
+    }
+
+
+
+    private void updatePieChart() {
+        Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
+        double totalBalance = 0.0;
+
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            String category = transaction.getCategory();
+            String subcategory = transaction.getSubcategory();
+            Double amount = transaction.getAmount();
+
+            categorySubcategoryBalances
+                    .computeIfAbsent(category, k -> new HashMap<>())
+                    .merge(subcategory, amount, Double::sum);
+
+            totalBalance += amount;
+        }
+
+        pieChart.getData().clear();
+
+        for (Map.Entry<String, Map<String, Double>> categoryEntry : categorySubcategoryBalances.entrySet()) {
+            String category = categoryEntry.getKey();
+            Map<String, Double> subcategoryBalances = categoryEntry.getValue();
+            double categoryTotal = subcategoryBalances.values().stream().mapToDouble(Double::doubleValue).sum();
+
+            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
+                String subcategory = subcategoryEntry.getKey();
+                double balance = subcategoryEntry.getValue();
+
+                // Рассчитываем процент для подкатегории
+                double percentage = (balance / categoryTotal) * 100;
+                String subcategoryLabel = subcategory + " (" + String.format("%.2f%%", percentage) + ")";
+
+                // Создаем объект PieChart.Data и добавляем его в диаграмму
+                PieChart.Data subcategoryData = new PieChart.Data(subcategoryLabel, Math.abs(balance));
+                pieChart.getData().add(subcategoryData);
             }
         }
     }
@@ -246,108 +398,12 @@ public class FinanceManagerApp extends Application {
     }
 
     private void saveTransactionToFile(String user, String transactionInfo) {
-        try (FileWriter writer = new FileWriter(user + "_transactions.txt", true);
-             BufferedWriter bw = new BufferedWriter(writer)) {
-
-            bw.write(transactionInfo);
-            bw.newLine();
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(user + "_transactions.txt", true))) {
+            writer.write(transactionInfo);
+            writer.newLine();
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    private TableView<Transaction> createTransactionHistoryTableView() {
-        TableView<Transaction> tableView = new TableView<>();
-
-        TableColumn<Transaction, String> dateTimeColumn = new TableColumn<>("Дата/Час");
-        dateTimeColumn.setCellValueFactory(new PropertyValueFactory<>("dateTime"));
-        dateTimeColumn.setMinWidth(150);
-
-        TableColumn<Transaction, String> categoryColumn = new TableColumn<>("Категорія");
-        categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
-        categoryColumn.setMinWidth(100);
-
-        TableColumn<Transaction, String> subcategoryColumn = new TableColumn<>("Підкатегорія");
-        subcategoryColumn.setCellValueFactory(new PropertyValueFactory<>("subcategory"));
-        subcategoryColumn.setMinWidth(140);
-
-        TableColumn<Transaction, Double> amountColumn = new TableColumn<>("Сума");
-        amountColumn.setCellValueFactory(new PropertyValueFactory<>("amount"));
-        amountColumn.setMinWidth(20);
-
-        TableColumn<Transaction, String> descriptionColumn = new TableColumn<>("Опис");
-        descriptionColumn.setCellValueFactory(new PropertyValueFactory<>("description"));
-        descriptionColumn.setMinWidth(200);
-
-        tableView.getColumns().addAll(dateTimeColumn, categoryColumn, subcategoryColumn, amountColumn, descriptionColumn);
-
-        return tableView;
-    }
-
-    private void updatePieChart() {
-        Map<String, BalanceCategory> balanceCategoryMap = new HashMap<>();
-        double totalBalance = 0.0;
-
-        for (Transaction transaction : transactionHistoryTableView.getItems()) {
-            String category = transaction.getCategory();
-            String subcategory = transaction.getSubcategory();
-            Double amount = transaction.getAmount();
-
-            balanceCategoryMap.computeIfAbsent(category, BalanceCategory::new)
-                    .getSubcategoryBalances()
-                    .merge(subcategory, amount, Double::sum);
-
-            totalBalance += amount;
-        }
-
-        ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
-
-        for (BalanceCategory balanceCategory : balanceCategoryMap.values()) {
-            String category = balanceCategory.getCategory();
-            Map<String, Double> subcategoryBalances = balanceCategory.getSubcategoryBalances();
-
-            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
-                String subcategory = subcategoryEntry.getKey();
-                double balance = subcategoryEntry.getValue();
-
-                pieChartData.add(new PieChart.Data(subcategory, Math.abs(balance)));
-            }
-        }
-
-        pieChart.setData(pieChartData);
-    }
-
-    private TableView<BalanceCategory> createBalanceTableView() {
-        TableView<BalanceCategory> tableView = new TableView<>();
-
-        TableColumn<BalanceCategory, String> categoryColumn = new TableColumn<>("Категорія");
-        categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
-        categoryColumn.setMinWidth(150);
-
-        TableColumn<BalanceCategory, Double> incomeColumn = new TableColumn<>("Общий доход");
-        incomeColumn.setCellValueFactory(cellData -> {
-            double totalIncome = calculateTotalIncome();
-            return new SimpleDoubleProperty(totalIncome).asObject();
-        });
-        incomeColumn.setMinWidth(100);
-
-        TableColumn<BalanceCategory, Double> expenseColumn = new TableColumn<>("Общие расходы");
-        expenseColumn.setCellValueFactory(cellData -> {
-            double totalExpense = calculateTotalExpense();
-            return new SimpleDoubleProperty(totalExpense).asObject();
-        });
-        expenseColumn.setMinWidth(100);
-
-        TableColumn<BalanceCategory, Double> balanceColumn = new TableColumn<>("Баланс");
-        balanceColumn.setCellValueFactory(cellData -> {
-            double totalBalance = calculateTotalBalance();
-            return new SimpleDoubleProperty(totalBalance).asObject();
-        });
-        balanceColumn.setMinWidth(100);
-
-        tableView.getColumns().addAll(categoryColumn, incomeColumn, expenseColumn, balanceColumn);
-
-        return tableView;
     }
 
     private double calculateTotalIncome() {
@@ -370,18 +426,120 @@ public class FinanceManagerApp extends Application {
         return totalExpense;
     }
 
-    private double calculateTotalBalance() {
-        return calculateTotalIncome() - calculateTotalExpense();
+    private TableView<Transaction> createTransactionHistoryTableView() {
+        TableView<Transaction> tableView = new TableView<>();
+        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Transaction, LocalDateTime> dateColumn = new TableColumn<>("Дата та час");
+        dateColumn.setCellValueFactory(new PropertyValueFactory<>("dateTime"));
+        dateColumn.setCellFactory(column -> new TableCell<>() {
+            private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+
+            @Override
+            protected void updateItem(LocalDateTime item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(formatter.format(item));
+                }
+            }
+        });
+
+        TableColumn<Transaction, String> categoryColumn = new TableColumn<>("Категорія");
+        categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
+
+        TableColumn<Transaction, String> subcategoryColumn = new TableColumn<>("Підкатегорія");
+        subcategoryColumn.setCellValueFactory(new PropertyValueFactory<>("subcategory"));
+
+        TableColumn<Transaction, Double> amountColumn = new TableColumn<>("Сума");
+        amountColumn.setCellValueFactory(new PropertyValueFactory<>("amount"));
+        amountColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double amount, boolean empty) {
+                super.updateItem(amount, empty);
+                if (empty || amount == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", amount));
+                }
+            }
+        });
+
+        TableColumn<Transaction, String> descriptionColumn = new TableColumn<>("Опис");
+        descriptionColumn.setCellValueFactory(new PropertyValueFactory<>("description"));
+        dateColumn.setPrefWidth(125); // Устанавливаем ширину столбца dateColumn
+        categoryColumn.setPrefWidth(80); // Устанавливаем ширину столбца categoryColumn
+        subcategoryColumn.setPrefWidth(125); // Устанавливаем ширину столбца subcategoryColumn
+        amountColumn.setPrefWidth(70); // Устанавливаем ширину столбца amountColumn
+        descriptionColumn.setPrefWidth(180); // Устанавливаем ширину столбца descriptionColumn
+
+
+        tableView.getColumns().addAll(dateColumn, categoryColumn, subcategoryColumn, amountColumn, descriptionColumn);
+        return tableView;
+    }
+
+    private TableView<BalanceCategory> createBalanceTableView() {
+        TableView<BalanceCategory> tableView = new TableView<>();
+        tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<BalanceCategory, String> categoryColumn = new TableColumn<>("Категорія");
+        categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
+
+        TableColumn<BalanceCategory, Double> incomeColumn = new TableColumn<>("Прибуток");
+        incomeColumn.setCellValueFactory(new PropertyValueFactory<>("totalIncome"));
+        incomeColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double income, boolean empty) {
+                super.updateItem(income, empty);
+                if (empty || income == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", income));
+                }
+            }
+        });
+
+        TableColumn<BalanceCategory, Double> expenseColumn = new TableColumn<>("Витрати");
+        expenseColumn.setCellValueFactory(new PropertyValueFactory<>("totalExpense"));
+        expenseColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double expense, boolean empty) {
+                super.updateItem(expense, empty);
+                if (empty || expense == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", expense));
+                }
+            }
+        });
+
+        TableColumn<BalanceCategory, Double> balanceColumn = new TableColumn<>("Баланс");
+        balanceColumn.setCellValueFactory(new PropertyValueFactory<>("totalBalance"));
+        balanceColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double balance, boolean empty) {
+                super.updateItem(balance, empty);
+                if (empty || balance == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", balance));
+                }
+            }
+        });
+
+        tableView.getColumns().addAll(categoryColumn, incomeColumn, expenseColumn, balanceColumn);
+        return tableView;
     }
 
     public static class Transaction {
-        private final String dateTime;
+        private final LocalDateTime dateTime;
         private final String category;
         private final String subcategory;
-        private final Double amount;
+        private final double amount;
         private final String description;
 
-        public Transaction(String dateTime, String category, String subcategory, Double amount, String description) {
+        public Transaction(LocalDateTime dateTime, String category, String subcategory, double amount, String description) {
             this.dateTime = dateTime;
             this.category = category;
             this.subcategory = subcategory;
@@ -389,7 +547,7 @@ public class FinanceManagerApp extends Application {
             this.description = description;
         }
 
-        public String getDateTime() {
+        public LocalDateTime getDateTime() {
             return dateTime;
         }
 
@@ -401,7 +559,7 @@ public class FinanceManagerApp extends Application {
             return subcategory;
         }
 
-        public Double getAmount() {
+        public double getAmount() {
             return amount;
         }
 
@@ -441,23 +599,21 @@ public class FinanceManagerApp extends Application {
     }
 
     public static class BalanceCategory {
-        private final String category;
-        private final Map<String, Double> subcategoryBalances;
+        private String category;
         private double totalIncome;
         private double totalExpense;
         private double totalBalance;
 
         public BalanceCategory(String category) {
             this.category = category;
-            this.subcategoryBalances = new HashMap<>();
         }
 
         public String getCategory() {
             return category;
         }
 
-        public Map<String, Double> getSubcategoryBalances() {
-            return subcategoryBalances;
+        public void setCategory(String category) {
+            this.category = category;
         }
 
         public double getTotalIncome() {
