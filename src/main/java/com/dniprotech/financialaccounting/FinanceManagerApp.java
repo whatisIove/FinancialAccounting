@@ -1,38 +1,54 @@
 package com.dniprotech.financialaccounting;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.annotations.SerializedName;
+import com.google.gson.reflect.TypeToken;
 import javafx.application.Application;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.PieChart;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.layout.*;
+import javafx.scene.layout.VBox;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontPosture;
+import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import javafx.util.Pair;
 import javafx.util.StringConverter;
 
 import java.io.*;
-import java.text.SimpleDateFormat;
+import java.lang.reflect.Type;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class FinanceManagerApp extends Application {
     private Stage primaryStage;
-    private BorderPane root;
     private String currentUser;
+    private VBox root;
+    private File usersFile;
+    private final Label userName = new Label();
+
+    private final DatePicker datePicker = new DatePicker();
+
+
     private SimpleDoubleProperty balance;
     private ObservableList<Category> categories;
     private Map<Category, List<Subcategory>> categorySubcategoriesMap;
     private TableView<Transaction> transactionHistoryTableView;
     private TableView<BalanceCategory> balanceTableView;
     private PieChart pieChart;
-    private TextField timeField; // Добавляем TextField для ввода времени
+    private List<Transaction> transactions = new ArrayList<>();
+
+    private final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDate.class, new LocalDateAdapter())
+            .create();
 
     public static void main(String[] args) {
         launch(args);
@@ -41,43 +57,211 @@ public class FinanceManagerApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        primaryStage.setTitle("Управління фінансами");
+        primaryStage.setTitle("Управленіння особистими фінансами");
+        root = new VBox(10);
+        root.setFillWidth(true); // Заполняем всю доступную вертикальную область
+        usersFile = new File("users.txt");
 
-        currentUser = getUserInfo();
+        if (!usersFile.exists()) {
+            try {
+                usersFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        showLoginOrMainApp();
+    }
 
-        root = new BorderPane();
 
-        MenuBar menuBar = new MenuBar();
-        Menu fileMenu = new Menu("Файл");
-        MenuItem saveItem = new MenuItem("Зберегти");
-        MenuItem exitItem = new MenuItem("Вийти");
-        exitItem.setOnAction(e -> primaryStage.close());
-        fileMenu.getItems().addAll(saveItem, new SeparatorMenuItem(), exitItem);
-        menuBar.getMenus().add(fileMenu);
-        root.setTop(menuBar);
+    private void showLoginOrMainApp() {
+        root.getChildren().clear(); // Очищаем все элементы из root
 
-        VBox userInfoBox = new VBox(10);
-        Label userInfoLabel = new Label("Користувач: " + currentUser);
-        userInfoLabel.setStyle("-fx-font-size: 18px;");
-        balance = new SimpleDoubleProperty(0.0);
+        if (currentUser == null) {
+            Dialog<ButtonType> loginOrRegisterDialog = new Dialog<>();
+            loginOrRegisterDialog.setTitle("Вибір дії");
+            ButtonType loginButtonType = new ButtonType("Увійти", ButtonBar.ButtonData.OK_DONE);
+            ButtonType registerButtonType = new ButtonType("Зареєструватися", ButtonBar.ButtonData.APPLY);
+            loginOrRegisterDialog.getDialogPane().getButtonTypes().addAll(loginButtonType, registerButtonType);
 
-        userInfoBox.getChildren().addAll(userInfoLabel);
-        root.setTop(userInfoBox);
+            // Устанавливаем текст в диалоге
+            loginOrRegisterDialog.setContentText("Оберіть, що ви хочете зробити:");
 
-        VBox transactionInputBox = new VBox(10);
-        transactionInputBox.setPadding(new Insets(20));
-        Label transactionLabel = new Label("Додавання операції");
-        transactionLabel.setStyle("-fx-font-size: 18px;");
-        TextField amountField = new TextField();
-        amountField.setPromptText("Сума");
+            // Отображаем диалоговое окно и обрабатываем результат
+            Optional<ButtonType> result = loginOrRegisterDialog.showAndWait();
 
-        DatePicker datePicker = new DatePicker();
-        datePicker.setPromptText("Дата");
-        datePicker.setValue(LocalDate.now());
+            if (result.isPresent() && result.get() == loginButtonType) {
+                showLoginDialog(); // Открываем диалог входа
+            } else if (result.isPresent() && result.get() == registerButtonType) {
+                showRegistrationDialog(); // Открываем диалог регистрации
+            }
+        } else {
+            // Очищаем root от кнопок "Увійти" и "Зареєструватися"
+            root.getChildren().removeIf(node -> (node instanceof Button));
 
-        // Добавляем TextField для ввода времени
-        timeField = new TextField();
-        timeField.setPromptText("ЧЧ:ММ:СС");
+            pieChart = createPieChart(); // Создаем диаграмму
+            root.getChildren().add(pieChart); // Добавляем диаграмму на форму
+
+            balanceTableView = createBalanceTableView(); // Создаем таблицу балансов
+            root.getChildren().add(balanceTableView); // Добавляем таблицу балансов на форму
+
+            openMainApp();
+
+        }
+
+        Scene scene = new Scene(root, 1200, 768);
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+
+    private void showLoginDialog() {
+        Dialog<Pair<String, String>> loginDialog = new Dialog<>();
+        loginDialog.setTitle("Вхід");
+        ButtonType loginButtonType = new ButtonType("Увійти", ButtonBar.ButtonData.OK_DONE);
+        loginDialog.getDialogPane().getButtonTypes().addAll(loginButtonType, ButtonType.CANCEL);
+
+        // Создаем текстовые поля для имени пользователя и пароля
+        TextField usernameField = new TextField();
+        usernameField.setPromptText("Ім'я користувача");
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Пароль");
+
+        // Добавляем текстовые поля в диалоговое окно
+        loginDialog.getDialogPane().setContent(new VBox(10, usernameField, passwordField));
+
+        // Валидация при входе
+        loginDialog.setResultConverter(dialogButton -> {
+            if (dialogButton == loginButtonType) {
+                return new Pair<>(usernameField.getText(), passwordField.getText());
+            }
+            return null;
+        });
+
+        // Отображаем диалоговое окно и обрабатываем результат
+        Optional<Pair<String, String>> result = loginDialog.showAndWait();
+        result.ifPresent(credentials -> {
+            String username = credentials.getKey();
+            String password = credentials.getValue();
+            if (loginUser(username, password)) {
+                currentUser = username;
+                root.getChildren().removeIf(node -> (node instanceof Button));
+                userName.setText("Користувач: " + currentUser + ", дата: " + LocalDate.now());
+                Font font = Font.font("Times New Roman", FontWeight.BOLD, FontPosture.ITALIC, 18);
+                userName.setFont(font);
+
+                root.getChildren().add(userName); // Добавляем usernameLabel
+                openMainApp();
+            } else {
+                showAlert("Помилка входу", "Неправильне ім'я користувача або пароль.");
+            }
+        });
+    }
+
+        private void showRegistrationDialog() {
+            Dialog<Pair<String, String>> registrationDialog = new Dialog<>();
+            registrationDialog.setTitle("Регістрація");
+            ButtonType registerButtonType = new ButtonType("Зареєструвати", ButtonBar.ButtonData.OK_DONE);
+            registrationDialog.getDialogPane().getButtonTypes().addAll(registerButtonType, ButtonType.CANCEL);
+
+            // Создаем текстовые поля для имени пользователя и пароля
+            TextField usernameField = new TextField();
+            usernameField.setPromptText("Ім'я користувача");
+            PasswordField passwordField = new PasswordField();
+            passwordField.setPromptText("Пароль");
+
+            // Добавляем текстовые поля в диалоговое окно
+            registrationDialog.getDialogPane().setContent(new VBox(10, usernameField, passwordField));
+
+            // Валидация при регистрации
+            registrationDialog.setResultConverter(dialogButton -> {
+                if (dialogButton == registerButtonType) {
+                    return new Pair<>(usernameField.getText(), passwordField.getText());
+                }
+                return null;
+            });
+
+            // Отображаем диалоговое окно и обрабатываем результат
+            Optional<Pair<String, String>> result = registrationDialog.showAndWait();
+            result.ifPresent(credentials -> {
+                String username = credentials.getKey();
+                String password = credentials.getValue();
+                if (registerUser(username, password)) {
+                    currentUser = username;
+                    root.getChildren().removeIf(node -> (node instanceof Button)); // Удаляем кнопки "Войти" и "Зарегистрироваться"
+                    openMainApp();
+                } else {
+                    showAlert("Помилка регістраціґ", "Користувач із таким ім'ям вже існує.");
+                }
+            });
+        }
+
+
+            private boolean loginUser(String username, String password) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("users.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length == 2) {
+                    String storedUsername = parts[0];
+                    String storedPassword = parts[1];
+                    if (username.equals(storedUsername) && hashPassword(password).equals(storedPassword)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private boolean registerUser(String username, String password) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("users.txt"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                if (parts.length > 0) {
+                    String storedUsername = parts[0];
+                    if (username.equals(storedUsername)) {
+                        return false;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("users.txt", true))) {
+            writer.write(username + " " + hashPassword(password));
+            writer.newLine();
+            return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+
+    private void openMainApp() {
+        primaryStage.setTitle("Управління особистими фінансами");
+        transactions = loadTransactionsFromFile(currentUser);
+        Button logoutButton = new Button("Вийти");
+        logoutButton.setOnAction(e -> {
+            Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmation.setTitle("Підтвердження");
+            confirmation.setHeaderText(null);
+            confirmation.setContentText("Ви впевнені, що хочете вийти?");
+
+            ButtonType confirmButtonType = new ButtonType("Так", ButtonBar.ButtonData.OK_DONE);
+            ButtonType cancelButtonType = new ButtonType("Скасувати", ButtonBar.ButtonData.CANCEL_CLOSE);
+            confirmation.getButtonTypes().setAll(confirmButtonType, cancelButtonType);
+
+            Optional<ButtonType> result = confirmation.showAndWait();
+            if (result.isPresent() && result.get() == confirmButtonType) {
+                // Выход из приложения
+                primaryStage.close();
+            }
+        });
 
         categories = FXCollections.observableArrayList(
                 new Category("Витрата", Arrays.asList(
@@ -113,15 +297,17 @@ public class FinanceManagerApp extends Application {
                 return null;
             }
         });
+
         categoryComboBox.setItems(FXCollections.observableArrayList(categories));
 
         ComboBox<String> subcategoryComboBox = new ComboBox<>();
         subcategoryComboBox.setPromptText("Виберіть підкатегорію");
+        subcategoryComboBox.setDisable(true);
 
         categoryComboBox.setOnAction(e -> {
             Category selectedCategory = categoryComboBox.getValue();
             if (selectedCategory != null) {
-                List<Subcategory> subcategories = selectedCategory.getSubcategories();
+                List<Subcategory> subcategories = categorySubcategoriesMap.get(selectedCategory);
                 List<String> subcategoryNames = new ArrayList<>();
                 for (Subcategory subcategory : subcategories) {
                     subcategoryNames.add(subcategory.getName());
@@ -136,121 +322,110 @@ public class FinanceManagerApp extends Application {
             }
         });
 
-        Button addRecordButton = new Button("Додати запис");
-        addRecordButton.setOnAction(e -> {
-            double amount = Double.parseDouble(amountField.getText());
+        TextField amountField = new TextField();
+        amountField.setPromptText("Сума");
+        TextField descriptionField = new TextField();
+        descriptionField.setPromptText("Опис");
+
+        datePicker.setPromptText("Оберіть дату");
+
+        Button addButton = new Button("Додати запис");
+        addButton.setOnAction(e -> {
+            LocalDate selectedDate = datePicker.getValue();
             Category category = categoryComboBox.getValue();
             String subcategory = subcategoryComboBox.getValue();
-            LocalDate selectedDate = datePicker.getValue();
-            String selectedTime = timeField.getText(); // Получаем значение времени из TextField
-            LocalDateTime dateTime = selectedDate.atTime(LocalTime.parse(selectedTime));
-            addTransaction(amount, category, subcategory, dateTime);
-        });
+            String amountStr = amountField.getText();
 
-        addRecordButton.setStyle("-fx-background-color: green; -fx-text-fill: white;");
-        addRecordButton.setMaxWidth(Double.MAX_VALUE);
-
-
-
-        transactionInputBox.getChildren().addAll(transactionLabel, amountField, datePicker, timeField, categoryComboBox, subcategoryComboBox, addRecordButton);
-        transactionInputBox.setAlignment(Pos.CENTER);
-        root.setLeft(transactionInputBox);
-
-        balanceTableView = createBalanceTableView();
-        balanceTableView.setMaxHeight(Double.MAX_VALUE);
-        balanceTableView.setPlaceholder(new Label("Таблиця балансів відсутня"));
-
-        VBox balanceTableBox = new VBox(10);
-        balanceTableBox.setPadding(new Insets(20));
-        Label balanceTableLabel = new Label("Таблиця балансів");
-        balanceTableLabel.setStyle("-fx-font-size: 18px;");
-        balanceTableBox.getChildren().addAll(balanceTableLabel, balanceTableView);
-        root.setCenter(balanceTableBox);
-
-        transactionHistoryTableView = createTransactionHistoryTableView();
-        transactionHistoryTableView.setMaxHeight(Double.MAX_VALUE);
-        transactionHistoryTableView.setPlaceholder(new Label("Історія транзакцій відсутня"));
-
-        VBox transactionHistoryBox = new VBox(10);
-        transactionHistoryBox.setPadding(new Insets(20));
-        Label transactionHistoryLabel = new Label("Історія транзакцій");
-        transactionHistoryLabel.setStyle("-fx-font-size: 18px;");
-        transactionHistoryBox.getChildren().addAll(transactionHistoryLabel, transactionHistoryTableView);
-        root.setRight(transactionHistoryBox);
-
-        pieChart = new PieChart();
-        pieChart.setTitle("Розподіл витрат за категоріями");
-        root.setBottom(pieChart);
-
-        primaryStage.setOnCloseRequest(e -> {
-            try {
-                saveDataToFile();
-            } catch (IOException ioException) {
-                ioException.printStackTrace();
+            if (category != null && subcategory != null && !amountStr.isEmpty()) {
+                try {
+                    double amount = Double.parseDouble(amountStr);
+                    String description = descriptionField.getText();
+                    addTransaction(category.getName(), subcategory, amount, description, selectedDate);
+                    categoryComboBox.getSelectionModel().clearSelection();
+                    subcategoryComboBox.getSelectionModel().clearSelection();
+                    amountField.clear();
+                    descriptionField.clear();
+                    datePicker.getEditor().clear();
+                } catch (NumberFormatException ex) {
+                    showAlert("Помилка", "Сума має бути числом.");
+                }
+            } else {
+                showAlert("Помилка", "Будь ласка, заповніть всі поля.");
             }
         });
 
-        Scene scene = new Scene(root, 1200, 768);
-        primaryStage.setScene(scene);
-        primaryStage.show();
 
-        try {
-            loadDataFromFile();
+        root.getChildren().addAll(logoutButton, categoryComboBox, subcategoryComboBox, amountField,
+                descriptionField, datePicker, addButton, transactionHistoryTableView, balanceTableView, pieChart);
+        updateBalanceTable();
+        updateTransactionTable();
+    }
+
+
+    private void updateTransactionTable() {
+        ObservableList<Transaction> transactionData = FXCollections.observableArrayList(transactions);
+        transactionHistoryTableView.setItems(transactionData);
+    }
+
+    public List<Transaction> loadTransactionsFromFile(String user) {
+        List<Transaction> transactions = new ArrayList<>();
+        String fileName = user + "_transactions.json";
+        File file = new File(fileName);
+
+        if (file.exists()) {
+            try (FileReader reader = new FileReader(fileName);
+                 BufferedReader bufferedReader = new BufferedReader(reader)) {
+                Type listType = new TypeToken<List<Transaction>>() {}.getType();
+                transactions = gson.fromJson(bufferedReader, listType);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return transactions;
+    }
+
+    private void addTransaction(String operationType, String subcategory, double amount, String description, LocalDate date) {
+        if (amount != 0) {
+            TextInputDialog descriptionDialog = new TextInputDialog();
+            descriptionDialog.setTitle("Додавання запису");
+            descriptionDialog.setHeaderText("Будь ласка, введіть опис операції (" + operationType + "):");
+            descriptionDialog.setContentText("Опис:");
+
+            Optional<String> descriptionResult = descriptionDialog.showAndWait();
+            if (descriptionResult.isPresent()) {
+                String userDescription = descriptionResult.get(); // Переименовали переменную в userDescription
+
+                String transactionInfo = date.toString() + " - Категорія: " + operationType + " - " +
+                        "Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + userDescription;
+                Transaction transaction = new Transaction(date, operationType, subcategory, amount, userDescription);
+                transactionHistoryTableView.getItems().add(transaction);
+                if ("Витрата".equals(operationType)) {
+                    balance.set(balance.get() - amount);
+                } else if ("Прибуток".equals(operationType)) {
+                    balance.set(balance.get() + amount);
+                }
+                updatePieChart();
+                saveTransactionToFile(currentUser, transactions);
+
+                // Добавьте эту строку для обновления таблицы балансов
+                updateBalanceTable();
+            }
+        }
+    }
+
+
+    private void saveTransactionToFile(String user, List<Transaction> transactions) {
+        String fileName = user + "_transactions.json";
+        try (FileWriter writer = new FileWriter(fileName)) {
+            gson.toJson(transactions, writer);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void loadDataFromFile() throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(currentUser + "_transactions.txt"))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                // Разбиваем строку на части, чтобы получить информацию о транзакции
-                String[] parts = line.split(" - ");
-                if (parts.length == 5) {
-                    String dateTimeStr = parts[0];
-                    String category = parts[1].split(": ")[1];
-                    String subcategory = parts[2].split(": ")[1];
-                    String amountStr = parts[3].split(": ")[1];
-                    String description = parts[4].split(": ")[1];
+    // В методе addTransaction вызываем saveTransactionToFile следующим образом:
 
-                    // Преобразуем строку с датой и временем в LocalDateTime
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
-                    LocalDateTime dateTime = LocalDateTime.parse(dateTimeStr, formatter);
-
-                    // Преобразуем строку с суммой в double
-                    double amount = Double.parseDouble(amountStr);
-
-                    // Создаем объект транзакции и добавляем его в таблицу и обновляем баланс
-                    Transaction transaction = new Transaction(dateTime, category, subcategory, amount, description);
-                    transactionHistoryTableView.getItems().add(transaction);
-                    if ("Витрата".equals(category)) {
-                        balance.set(balance.get() - amount);
-                    } else if ("Прибуток".equals(category)) {
-                        balance.set(balance.get() + amount);
-                    }
-                    updatePieChart();
-                    updateBalanceTable();
-                }
-            }
-        }
-    }
-
-    private void saveDataToFile() throws IOException {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(currentUser + "_transactions.txt"))) {
-            for (Transaction transaction : transactionHistoryTableView.getItems()) {
-                String dateTimeStr = transaction.getDateTime().format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
-                String category = transaction.getCategory();
-                String subcategory = transaction.getSubcategory();
-                String amountStr = String.valueOf(transaction.getAmount());
-                String description = transaction.getDescription();
-
-                String transactionInfo = dateTimeStr + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: " + amountStr + ", Опис: " + description;
-                writer.write(transactionInfo);
-                writer.newLine();
-            }
-        }
-    }
 
     private PieChart createPieChart() {
         Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
@@ -304,55 +479,15 @@ public class FinanceManagerApp extends Application {
         balanceTableView.setItems(balanceData);
     }
 
-    private String getUserInfo() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Авторизація");
-        dialog.setHeaderText("Будь ласка, введіть ваше ім'я та прізвище:");
-        dialog.setContentText("Ім'я та прізвище:");
 
-        String result = "";
-        while (result.isEmpty()) {
-            Optional<String> userInput = dialog.showAndWait();
-            if (userInput.isPresent()) {
-                result = userInput.get();
-            } else {
-                System.exit(0);
-            }
-        }
-
-        return result;
-    }
-
-    private void addTransaction(double amount, Category category, String subcategory, LocalDateTime dateTime) {
-        if (amount != 0) {
-            String operationType = category.getName();
-            TextInputDialog descriptionDialog = new TextInputDialog();
-            descriptionDialog.setTitle("Додавання запису");
-            descriptionDialog.setHeaderText("Будь ласка, введіть опис операції (" + operationType + "):");
-            descriptionDialog.setContentText("Опис:");
-
-            Optional<String> descriptionResult = descriptionDialog.showAndWait();
-            if (descriptionResult.isPresent()) {
-                String description = descriptionResult.get();
-
-                String transactionInfo = dateTime.toString() + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
-                Transaction transaction = new Transaction(dateTime, category.getName(), subcategory, amount, description);
-                transactionHistoryTableView.getItems().add(transaction);
-                if ("Витрата".equals(operationType)) {
-                    balance.set(balance.get() - amount);
-                } else if ("Прибуток".equals(operationType)) {
-                    balance.set(balance.get() + amount);
-                }
-                updatePieChart();
-                saveTransactionToFile(currentUser, transactionInfo);
-
-                // Добавьте эту строку для обновления таблицы балансов
-                updateBalanceTable();
-            }
-        }
-    }
-
-
+//    private void updateCategoryBalances(String category, double amount) {
+//        for (Category cat : categories) {
+//            if (cat.getName().equals(category)) {
+//                cat.updateBalance(amount);
+//            }
+//        }
+//        updateBalanceTable();
+//    }
 
     private void updatePieChart() {
         Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
@@ -392,20 +527,6 @@ public class FinanceManagerApp extends Application {
         }
     }
 
-    private String getFormattedDateTime() {
-        SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
-        return sdf.format(new Date());
-    }
-
-    private void saveTransactionToFile(String user, String transactionInfo) {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(user + "_transactions.txt", true))) {
-            writer.write(transactionInfo);
-            writer.newLine();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
     private double calculateTotalIncome() {
         double totalIncome = 0.0;
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
@@ -430,13 +551,13 @@ public class FinanceManagerApp extends Application {
         TableView<Transaction> tableView = new TableView<>();
         tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
-        TableColumn<Transaction, LocalDateTime> dateColumn = new TableColumn<>("Дата та час");
+        TableColumn<Transaction, LocalDate> dateColumn = new TableColumn<>("Дата та час");
         dateColumn.setCellValueFactory(new PropertyValueFactory<>("dateTime"));
         dateColumn.setCellFactory(column -> new TableCell<>() {
             private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
 
             @Override
-            protected void updateItem(LocalDateTime item, boolean empty) {
+            protected void updateItem(LocalDate item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
@@ -532,41 +653,41 @@ public class FinanceManagerApp extends Application {
         return tableView;
     }
 
-    public static class Transaction {
-        private final LocalDateTime dateTime;
-        private final String category;
-        private final String subcategory;
-        private final double amount;
-        private final String description;
+    public class Transaction implements Serializable {
 
-        public Transaction(LocalDateTime dateTime, String category, String subcategory, double amount, String description) {
-            this.dateTime = dateTime;
-            this.category = category;
-            this.subcategory = subcategory;
-            this.amount = amount;
-            this.description = description;
+        @SerializedName("date")
+        private final LocalDate date; // Изменили тип данных на LocalDate
+
+            private final String category;
+            private final String subcategory;
+            private final double amount;
+            private final String description;
+
+            public Transaction(LocalDate date, String category, String subcategory, double amount, String description) {
+                this.date = date;
+                this.category = category;
+                this.subcategory = subcategory;
+                this.amount = amount;
+                this.description = description;
+            }
+
+            public String getCategory() {
+                return category;
+            }
+
+            public String getSubcategory() {
+                return subcategory;
+            }
+
+            public double getAmount() {
+                return amount;
+            }
+
+            public String getDescription() {
+                return description;
+            }
         }
 
-        public LocalDateTime getDateTime() {
-            return dateTime;
-        }
-
-        public String getCategory() {
-            return category;
-        }
-
-        public String getSubcategory() {
-            return subcategory;
-        }
-
-        public double getAmount() {
-            return amount;
-        }
-
-        public String getDescription() {
-            return description;
-        }
-    }
 
     public static class Category {
         private final String name;
@@ -640,4 +761,28 @@ public class FinanceManagerApp extends Application {
             this.totalBalance = totalBalance;
         }
     }
+
+    private String hashPassword(String password) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = md.digest(password.getBytes());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+        return password;
+    }
+
+    private void showAlert(String title, String content) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
 }
