@@ -7,7 +7,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.chart.PieChart;
+import javafx.scene.chart.*;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
@@ -16,6 +16,7 @@ import javafx.util.StringConverter;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -31,7 +32,8 @@ public class FinanceManagerApp extends Application {
     private Map<Category, List<Subcategory>> categorySubcategoriesMap;
     private TableView<Transaction> transactionHistoryTableView;
     private TableView<BalanceCategory> balanceTableView;
-    private PieChart pieChart;
+    private PieChart pieChart; // Moved from the class level
+    private LineChart<String, Number> lineChart; // Moved from the class level
     private TextField timeField; // Добавляем TextField для ввода времени
 
     public static void main(String[] args) {
@@ -43,7 +45,22 @@ public class FinanceManagerApp extends Application {
         this.primaryStage = primaryStage;
         primaryStage.setTitle("Управління фінансами");
 
-        currentUser = getUserInfo();
+        String userName = getUserInfo();
+        currentUser = userName;
+
+        // Определяем имя файла данных пользователя на основе введенного имени
+        String userDataFileName = userName + "_transactions.txt";
+        System.out.println("Имя файла данных пользователя: " + userDataFileName);
+
+        // Загружаем данные пользователя, если файл существует
+        File userDataFile = new File(userDataFileName);
+        if (userDataFile.exists()) {
+            try {
+                loadDataFromFile(userDataFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         root = new BorderPane();
 
@@ -150,9 +167,15 @@ public class FinanceManagerApp extends Application {
         addRecordButton.setStyle("-fx-background-color: green; -fx-text-fill: white;");
         addRecordButton.setMaxWidth(Double.MAX_VALUE);
 
+        Button openChartsButton = new Button("Аналітичні інструменти");
+        openChartsButton.setOnAction(e -> openChartsWindow());
 
+        HBox buttonsBox = new HBox(10); // 10 - это отступ между кнопками
+        buttonsBox.setAlignment(Pos.CENTER); // Выравнивание по центру
+        buttonsBox.getChildren().addAll(addRecordButton, openChartsButton);
 
-        transactionInputBox.getChildren().addAll(transactionLabel, amountField, datePicker, timeField, categoryComboBox, subcategoryComboBox, addRecordButton);
+        transactionInputBox.getChildren().addAll(transactionLabel, amountField, datePicker, timeField,
+                categoryComboBox, subcategoryComboBox, buttonsBox); // Добавляем HBox с кнопками
         transactionInputBox.setAlignment(Pos.CENTER);
         root.setLeft(transactionInputBox);
 
@@ -178,114 +201,116 @@ public class FinanceManagerApp extends Application {
         transactionHistoryBox.getChildren().addAll(transactionHistoryLabel, transactionHistoryTableView);
         root.setRight(transactionHistoryBox);
 
-        pieChart = new PieChart();
-        pieChart.setTitle("Розподіл витрат за категоріями");
-        root.setBottom(pieChart);
 
         primaryStage.setOnCloseRequest(e -> {
             try {
-                saveDataToFile();
+                File userFile = new File("userdata", currentUser + "_transactions.txt");
+                saveDataToFile(userFile);
             } catch (IOException ioException) {
                 ioException.printStackTrace();
             }
         });
 
-        Scene scene = new Scene(root, 1200, 768);
+        Scene scene = new Scene(root, 1200, 600);
         primaryStage.setScene(scene);
         primaryStage.show();
-
-        try {
-            loadDataFromFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
-    private void loadDataFromFile() throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(currentUser + "_transactions.txt"))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                // Разбиваем строку на части, чтобы получить информацию о транзакции
-                String[] parts = line.split(" - ");
-                if (parts.length == 5) {
-                    String dateTimeStr = parts[0];
-                    String category = parts[1].split(": ")[1];
-                    String subcategory = parts[2].split(": ")[1];
-                    String amountStr = parts[3].split(": ")[1];
-                    String description = parts[4].split(": ")[1];
+    private void createAndConfigurePieChart() {
+        pieChart = new PieChart();
+        pieChart.setTitle("Розподіл витрат за категоріями");
 
-                    // Преобразуем строку с датой и временем в LocalDateTime
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
-                    LocalDateTime dateTime = LocalDateTime.parse(dateTimeStr, formatter);
-
-                    // Преобразуем строку с суммой в double
-                    double amount = Double.parseDouble(amountStr);
-
-                    // Создаем объект транзакции и добавляем его в таблицу и обновляем баланс
-                    Transaction transaction = new Transaction(dateTime, category, subcategory, amount, description);
-                    transactionHistoryTableView.getItems().add(transaction);
-                    if ("Витрата".equals(category)) {
-                        balance.set(balance.get() - amount);
-                    } else if ("Прибуток".equals(category)) {
-                        balance.set(balance.get() + amount);
-                    }
-                    updatePieChart();
-                    updateBalanceTable();
-                }
-            }
-        }
+        // Initialize the pieChart data or configure it as needed
+        updatePieChart(); // You can configure the pieChart data in the updatePieChart method
     }
 
-    private void saveDataToFile() throws IOException {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(currentUser + "_transactions.txt"))) {
-            for (Transaction transaction : transactionHistoryTableView.getItems()) {
-                String dateTimeStr = transaction.getDateTime().format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
-                String category = transaction.getCategory();
-                String subcategory = transaction.getSubcategory();
-                String amountStr = String.valueOf(transaction.getAmount());
-                String description = transaction.getDescription();
+    private void createAndConfigureLineChart() {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        lineChart = new LineChart<>(xAxis, yAxis);
+        lineChart.setTitle("Графік балансу");
 
-                String transactionInfo = dateTimeStr + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: " + amountStr + ", Опис: " + description;
-                writer.write(transactionInfo);
-                writer.newLine();
-            }
-        }
+        // Configure the x-axis and y-axis as needed
+        xAxis.setLabel("Дата");
+        yAxis.setLabel("Баланс");
+
+        // You can also initialize the lineChart data or configure it as needed
+        updateLineChart(); // You can configure the lineChart data in the updateLineChart method
+    }
+
+    private void openChartsWindow() {
+        // Create and configure pieChart and lineChart
+        createAndConfigurePieChart();
+        createAndConfigureLineChart();
+
+        // Create a new Stage for the analytical tools window
+        Stage chartsStage = new Stage();
+        chartsStage.setTitle("Аналітичні інструменти");
+
+        // Create a scene containing pieChart and lineChart
+        VBox chartsBox = new VBox(20);
+        chartsBox.setPadding(new Insets(20));
+        chartsBox.setAlignment(Pos.CENTER);
+
+        // Create a larger VBox for both charts
+        VBox pieChartBox = new VBox(30);
+        pieChartBox.setAlignment(Pos.CENTER);
+
+        // Set a preferred size for the pieChart
+        pieChart.setPrefSize(800, 400);
+
+        VBox lineChartBox = new VBox(30);
+        lineChartBox.setAlignment(Pos.CENTER);
+
+        // Set a preferred size for the lineChart
+        lineChart.setPrefSize(800, 400);
+
+        pieChartBox.getChildren().add(pieChart);
+        lineChartBox.getChildren().add(lineChart);
+
+        chartsBox.getChildren().addAll(pieChartBox, lineChartBox);
+
+        // Create a scene for the analytical tools window
+        Scene chartsScene = new Scene(chartsBox);
+
+        // Set the scene for the window
+        chartsStage.setScene(chartsScene);
+
+        // Open the window
+        chartsStage.show();
+    }
+
+    private Transaction createTransactionFromRecord(TransactionRecord transactionRecord) {
+        LocalDate date = transactionRecord.getDate();
+        LocalTime time = transactionRecord.getTime();
+        LocalDateTime dateTime = LocalDateTime.of(date, time);
+        String category = transactionRecord.getCategory();
+        String subcategory = transactionRecord.getSubcategory();
+        double amount = transactionRecord.getAmount();
+        String description = transactionRecord.getDescription();
+        return new Transaction(dateTime, category, subcategory, amount, description);
     }
 
     private PieChart createPieChart() {
-        Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
+        Map<String, Double> categoryBalances = new HashMap<>();
         double totalBalance = 0.0;
 
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String category = transaction.getCategory();
-            String subcategory = transaction.getSubcategory();
             Double amount = transaction.getAmount();
-
-            categorySubcategoryBalances
-                    .computeIfAbsent(category, k -> new HashMap<>())
-                    .merge(subcategory, amount, Double::sum);
-
+            categoryBalances.merge(category, amount, Double::sum);
             totalBalance += amount;
         }
 
         PieChart chart = new PieChart();
-        for (Map.Entry<String, Map<String, Double>> categoryEntry : categorySubcategoryBalances.entrySet()) {
+
+        for (Map.Entry<String, Double> categoryEntry : categoryBalances.entrySet()) {
             String category = categoryEntry.getKey();
-            Map<String, Double> subcategoryBalances = categoryEntry.getValue();
-            double categoryTotal = subcategoryBalances.values().stream().mapToDouble(Double::doubleValue).sum();
-
-            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
-                String subcategory = subcategoryEntry.getKey();
-                double balance = subcategoryEntry.getValue();
-
-                // Рассчитываем процент для подкатегории
-                double percentage = (balance / categoryTotal) * 100;
-                String subcategoryLabel = subcategory + " (" + String.format("%.2f%%", percentage) + ")";
-
-                // Создаем объект PieChart.Data и добавляем его в диаграмму
-                PieChart.Data subcategoryData = new PieChart.Data(subcategoryLabel, Math.abs(balance));
-                chart.getData().add(subcategoryData);
-            }
+            double balance = categoryEntry.getValue();
+            double percentage = (balance / totalBalance) * 100;
+            String categoryLabel = category + " (" + String.format("%.2f%%", percentage) + ")";
+            PieChart.Data categoryData = new PieChart.Data(categoryLabel, Math.abs(percentage)); // Изменено в этой строке
+            chart.getData().add(categoryData);
         }
         return chart;
     }
@@ -315,16 +340,108 @@ public class FinanceManagerApp extends Application {
             Optional<String> userInput = dialog.showAndWait();
             if (userInput.isPresent()) {
                 result = userInput.get();
+                currentUser = result;
+
+                File userFile = new File("userdata", currentUser + "_transactions.txt");
+                if (userFile.exists()) {
+                    try {
+                        loadDataFromFile(userFile); // Load the data into tables
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    System.out.println("Файл не найден для пользователя: " + currentUser);
+                }
             } else {
                 System.exit(0);
             }
         }
-
         return result;
     }
 
+
+    private void loadDataFromFile(File userFile) throws IOException {
+        if (userFile.exists()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(userFile))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    TransactionRecord transactionRecord = TransactionRecord.fromString(line);
+                    if (transactionRecord != null) {
+                        Transaction transaction = createTransactionFromRecord(transactionRecord);
+                        transactionHistoryTableView.getItems().add(transaction);
+                    }
+                }
+            }
+        } else {
+            System.out.println("Файл не найден для пользователя: " + currentUser);
+        }
+    }
+
+
+    private LineChart<String, Number> createLineChart() {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        xAxis.setLabel("Дата");
+        yAxis.setLabel("Баланс");
+
+        LineChart<String, Number> chart = new LineChart<>(xAxis, yAxis);
+        chart.setTitle("Зміна балансу з часом");
+
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        series.setName("Баланс");
+
+        // Add data points to the series based on your transaction history
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            String date = transaction.getDateTime().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+            double balanceChange = transaction.getAmount();
+            series.getData().add(new XYChart.Data<>(date, balanceChange));
+        }
+
+        chart.getData().add(series);
+
+        return chart;
+    }
+
+    private void updateLineChart() {
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        series.setName("Баланс");
+
+        double cumulativeBalance = 0.0;
+
+        for (Transaction transaction : transactionHistoryTableView.getItems()) {
+            String date = transaction.getDateTime().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+            double balanceChange = transaction.getAmount();
+            String category = transaction.getCategory();
+
+            // Adjust the cumulative balance based on the transaction category
+            if ("Витрата".equals(category)) {
+                cumulativeBalance -= balanceChange;
+            } else if ("Прибуток".equals(category)) {
+                cumulativeBalance += balanceChange;
+            }
+
+            series.getData().add(new XYChart.Data<>(date, cumulativeBalance));
+        }
+
+        lineChart.getData().setAll(series);  // Set the new series
+        lineChart.layout();  // Force a layout update
+    }
+
+
+    private void saveDataToFile(File userFile) throws IOException {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(userFile, true))) {
+            for (Transaction transaction : transactionHistoryTableView.getItems()) {
+                writer.write(transaction.toRecordString());
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
     private void addTransaction(double amount, Category category, String subcategory, LocalDateTime dateTime) {
-        if (amount != 0) {
+        if (amount != 0 && category != null) { // Проверка, что category не равно null
             String operationType = category.getName();
             TextInputDialog descriptionDialog = new TextInputDialog();
             descriptionDialog.setTitle("Додавання запису");
@@ -338,12 +455,15 @@ public class FinanceManagerApp extends Application {
                 String transactionInfo = dateTime.toString() + " - Категорія: " + category.getName() + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
                 Transaction transaction = new Transaction(dateTime, category.getName(), subcategory, amount, description);
                 transactionHistoryTableView.getItems().add(transaction);
-                if ("Витрата".equals(operationType)) {
+
+                if ("Витрата".equals(operationType) && balance != null) { // Проверка, что balance не равно null
                     balance.set(balance.get() - amount);
-                } else if ("Прибуток".equals(operationType)) {
+                } else if ("Прибуток".equals(operationType) && balance != null) { // Проверка, что balance не равно null
                     balance.set(balance.get() + amount);
                 }
+
                 updatePieChart();
+                updateLineChart();
                 saveTransactionToFile(currentUser, transactionInfo);
 
                 // Добавьте эту строку для обновления таблицы балансов
@@ -353,42 +473,26 @@ public class FinanceManagerApp extends Application {
     }
 
 
-
     private void updatePieChart() {
-        Map<String, Map<String, Double>> categorySubcategoryBalances = new HashMap<>();
+        Map<String, Double> categoryBalances = new HashMap<>();
         double totalBalance = 0.0;
 
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String category = transaction.getCategory();
-            String subcategory = transaction.getSubcategory();
             Double amount = transaction.getAmount();
-
-            categorySubcategoryBalances
-                    .computeIfAbsent(category, k -> new HashMap<>())
-                    .merge(subcategory, amount, Double::sum);
-
+            categoryBalances.merge(category, amount, Double::sum);
             totalBalance += amount;
         }
 
         pieChart.getData().clear();
 
-        for (Map.Entry<String, Map<String, Double>> categoryEntry : categorySubcategoryBalances.entrySet()) {
+        for (Map.Entry<String, Double> categoryEntry : categoryBalances.entrySet()) {
             String category = categoryEntry.getKey();
-            Map<String, Double> subcategoryBalances = categoryEntry.getValue();
-            double categoryTotal = subcategoryBalances.values().stream().mapToDouble(Double::doubleValue).sum();
-
-            for (Map.Entry<String, Double> subcategoryEntry : subcategoryBalances.entrySet()) {
-                String subcategory = subcategoryEntry.getKey();
-                double balance = subcategoryEntry.getValue();
-
-                // Рассчитываем процент для подкатегории
-                double percentage = (balance / categoryTotal) * 100;
-                String subcategoryLabel = subcategory + " (" + String.format("%.2f%%", percentage) + ")";
-
-                // Создаем объект PieChart.Data и добавляем его в диаграмму
-                PieChart.Data subcategoryData = new PieChart.Data(subcategoryLabel, Math.abs(balance));
-                pieChart.getData().add(subcategoryData);
-            }
+            double balance = categoryEntry.getValue();
+            double percentage = (balance / totalBalance) * 100;
+            String categoryLabel = category + " (" + String.format("%.2f%%", percentage) + ")";
+            PieChart.Data categoryData = new PieChart.Data(categoryLabel, Math.abs(percentage));
+            pieChart.getData().add(categoryData);
         }
     }
 
@@ -532,6 +636,7 @@ public class FinanceManagerApp extends Application {
         return tableView;
     }
 
+
     public static class Transaction {
         private final LocalDateTime dateTime;
         private final String category;
@@ -566,6 +671,12 @@ public class FinanceManagerApp extends Application {
         public String getDescription() {
             return description;
         }
+
+        public String toRecordString() {
+            String formattedDateTime = dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+            return formattedDateTime + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
+        }
+
     }
 
     public static class Category {
