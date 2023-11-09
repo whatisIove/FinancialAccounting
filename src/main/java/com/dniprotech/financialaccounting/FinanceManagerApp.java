@@ -6,11 +6,15 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.paint.Paint;
+import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 
@@ -22,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class FinanceManagerApp extends Application {
     private Stage primaryStage;
@@ -32,10 +37,10 @@ public class FinanceManagerApp extends Application {
     private Map<Category, List<Subcategory>> categorySubcategoriesMap;
     private TableView<Transaction> transactionHistoryTableView;
     private TableView<BalanceCategory> balanceTableView;
-    private PieChart pieChart; // Moved from the class level
-    private LineChart<String, Number> lineChart; // Moved from the class level
+    private PieChart pieChart;
+    private LineChart<String, Number> lineChart;
     private BarChart<String, Number> barChart;
-
+    private ScatterChart<String, Number> scatterChart;
     private TextField timeField; // Добавляем TextField для ввода времени
 
     public static void main(String[] args) {
@@ -46,7 +51,6 @@ public class FinanceManagerApp extends Application {
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
         primaryStage.setTitle("Управління фінансами");
-
         String userName = getUserInfo();
         currentUser = userName;
 
@@ -251,6 +255,18 @@ public class FinanceManagerApp extends Application {
         updateBarChart(barChart);
     }
 
+    private void createAndConfigureScatterChart() {
+        scatterChart = createScatterChart();
+
+        // Настройте scatterChart по желанию, установив заголовок и метки осей
+        scatterChart.setTitle("Scatter Chart");
+        scatterChart.getXAxis().setLabel("Підкатегорії");
+        scatterChart.getYAxis().setLabel("Прибуток та витрати");
+        scatterChart.setLegendVisible(false);
+        updateScatterChart(scatterChart);
+    }
+
+
     private void openChartsWindow() {
         // Create a new Stage for the analytical tools window
         Stage chartsStage = new Stage();
@@ -266,10 +282,8 @@ public class FinanceManagerApp extends Application {
         // Create a ComboBox for chart selection
         ComboBox<String> chartSelector = new ComboBox<>();
         chartSelector.setPromptText("Оберіть тип");
-        ObservableList<String> chartOptions =
-                FXCollections.observableArrayList("Pie Chart", "Line Chart", "Bar Chart");
+        ObservableList<String> chartOptions = FXCollections.observableArrayList("Pie Chart", "Line Chart", "Bar Chart", "Scatter Chart");
         chartSelector.setItems(chartOptions);
-
 
         // Add an event handler for the ComboBox selection
         chartSelector.setOnAction(event -> {
@@ -284,6 +298,9 @@ public class FinanceManagerApp extends Application {
             } else if ("Bar Chart".equals(selectedChart)) {
                 createAndConfigureBarChart();
                 chartBox.getChildren().add(barChart);
+            } else if ("Scatter Chart".equals(selectedChart)) {
+                createAndConfigureScatterChart();
+                chartBox.getChildren().add(scatterChart);
             }
         });
 
@@ -301,6 +318,7 @@ public class FinanceManagerApp extends Application {
         chartsStage.show();
     }
 
+
     private Transaction createTransactionFromRecord(TransactionRecord transactionRecord) {
         LocalDate date = transactionRecord.getDate();
         LocalTime time = transactionRecord.getTime();
@@ -311,6 +329,77 @@ public class FinanceManagerApp extends Application {
         String description = transactionRecord.getDescription();
         return new Transaction(dateTime, category, subcategory, amount, description);
     }
+
+    public ScatterChart<String, Number> createScatterChart() {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        ScatterChart<String, Number> scatterChart = new ScatterChart<>(xAxis, yAxis);
+        scatterChart.setTitle("Scatter Chart");
+
+        updateScatterChart(scatterChart);
+
+        return scatterChart;
+    }
+
+    public void updateScatterChart(ScatterChart<String, Number> scatterChart) {
+        scatterChart.getData().clear();
+
+        List<Transaction> transactions = transactionHistoryTableView.getItems();
+
+        // Создайте карту для отображения категорий/подкатегорий и соответствующих цветов
+        Map<String, Paint> categoryColors = new HashMap<>();
+
+        // Создайте карту для суммирования данных по подкатегориям
+        Map<String, Double> subcategorySums = new HashMap<>();
+
+        for (Transaction transaction : transactions) {
+            String category = transaction.getCategory();
+            String subcategory = transaction.getSubcategory();
+            double totalAmount = transaction.getIncome() - transaction.getExpense();
+
+            // Определите цвет для категории или подкатегории, если его еще нет
+            if (!categoryColors.containsKey(subcategory)) {
+                categoryColors.put(subcategory, getRandomColor());
+            }
+
+            // Суммируйте данные по подкатегории
+            if (subcategorySums.containsKey(subcategory)) {
+                subcategorySums.put(subcategory, subcategorySums.get(subcategory) + totalAmount);
+            } else {
+                subcategorySums.put(subcategory, totalAmount);
+            }
+        }
+
+        // Создайте серии данных на основе сумм подкатегорий
+        for (Map.Entry<String, Double> entry : subcategorySums.entrySet()) {
+            String subcategory = entry.getKey();
+            double totalAmount = entry.getValue();
+
+            // Создайте серию данных для каждой подкатегории
+            XYChart.Series<String, Number> series = new XYChart.Series<>();
+            series.setName(subcategory);
+
+            // Создайте точку с соответствующим цветом для подкатегории
+            XYChart.Data<String, Number> dataPoint = new XYChart.Data<>(subcategory, totalAmount);
+            dataPoint.setNode(createDataPointNode(categoryColors.get(subcategory)));
+
+            series.getData().add(dataPoint);
+
+            scatterChart.getData().add(series);
+        }
+    }
+
+    private Node createDataPointNode(Paint color) {
+        Circle circle = new Circle(5); // Размер точки
+        circle.setFill(color); // Установка цвета точки
+        return circle;
+    }
+
+    private Paint getRandomColor() {
+        Random rand = new Random();
+        return Color.rgb(rand.nextInt(256), rand.nextInt(256), rand.nextInt(256));
+    }
+
 
     private PieChart createPieChart() {
         Map<String, Double> categoryBalances = new HashMap<>();
@@ -537,10 +626,9 @@ public class FinanceManagerApp extends Application {
                 updatePieChart();
                 updateLineChart();
                 updateBarChart(barChart); // Обновляем столбчатую диаграмму
-
-                saveTransactionToFile(currentUser, transactionInfo);
-
                 updateBalanceTable();
+                updateScatterChart(scatterChart);
+                saveTransactionToFile(currentUser, transactionInfo);
             }
         }
     }
@@ -743,12 +831,22 @@ public class FinanceManagerApp extends Application {
             return description;
         }
 
-        public String toRecordString() {
-            String formattedDateTime = dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
-            return formattedDateTime + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: " + amount + ", Опис: " + description;
+        public double getIncome() {
+            return amount > 0 ? amount : 0;
         }
 
+        public double getExpense() {
+            return amount < 0 ? -amount : 0;
+        }
+
+
+        public String toRecordString() {
+            String formattedDateTime = dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+            return formattedDateTime + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: "
+                    + amount + ", Опис: " + description;
+        }
     }
+
 
     public static class Category {
         private final String name;
@@ -822,4 +920,56 @@ public class FinanceManagerApp extends Application {
             this.totalBalance = totalBalance;
         }
     }
+
+    public class CategoryData {
+        private String category;
+        private List<SubcategoryData> subcategories;
+
+        public String getCategory() {
+            return category;
+        }
+
+        public void setCategory(String category) {
+            this.category = category;
+        }
+
+        public List<SubcategoryData> getSubcategories() {
+            return subcategories;
+        }
+
+        public void setSubcategories(List<SubcategoryData> subcategories) {
+            this.subcategories = subcategories;
+        }
+    }
+
+    public class SubcategoryData {
+        private String subcategory;
+        private List<Double> incomes;
+        private List<Double> expenses;
+
+        public String getSubcategory() {
+            return subcategory;
+        }
+
+        public void setSubcategory(String subcategory) {
+            this.subcategory = subcategory;
+        }
+
+        public List<Double> getIncomes() {
+            return incomes;
+        }
+
+        public void setIncomes(List<Double> incomes) {
+            this.incomes = incomes;
+        }
+
+        public List<Double> getExpenses() {
+            return expenses;
+        }
+
+        public void setExpenses(List<Double> expenses) {
+            this.expenses = expenses;
+        }
+    }
+
 }
