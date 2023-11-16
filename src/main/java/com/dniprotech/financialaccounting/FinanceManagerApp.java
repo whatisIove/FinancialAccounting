@@ -2,6 +2,7 @@ package com.dniprotech.financialaccounting;
 
 import javafx.application.Application;
 import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -19,6 +20,7 @@ import javafx.stage.Stage;
 import javafx.util.StringConverter;
 
 import java.io.*;
+import java.text.DateFormatSymbols;
 import java.text.SimpleDateFormat;
 
 import java.time.LocalDate;
@@ -47,6 +49,7 @@ public class FinanceManagerApp extends Application {
     private TextField timeField; // Добавляем TextField для ввода времени
     private Label incomeTotalLabel = new Label();
     private Label expenseTotalLabel = new Label();
+
 
 
     public static void main(String[] args) {
@@ -191,16 +194,6 @@ public class FinanceManagerApp extends Application {
         transactionInputBox.setAlignment(Pos.CENTER);
         root.setLeft(transactionInputBox);
 
-        balanceTableView = createBalanceTableView();
-        balanceTableView.setMaxHeight(Double.MAX_VALUE);
-        balanceTableView.setPlaceholder(new Label("Таблиця балансів відсутня"));
-
-        VBox balanceTableBox = new VBox(10);
-        balanceTableBox.setPadding(new Insets(20));
-        Label balanceTableLabel = new Label("Таблиця балансів");
-        balanceTableLabel.setStyle("-fx-font-size: 18px;");
-        balanceTableBox.getChildren().addAll(balanceTableLabel, balanceTableView);
-        root.setCenter(balanceTableBox);
 
         transactionHistoryTableView = createTransactionHistoryTableView();
         transactionHistoryTableView.setMaxHeight(Double.MAX_VALUE);
@@ -280,6 +273,11 @@ public class FinanceManagerApp extends Application {
         updateExpenseCategoryTable(); // Метод для обновления данных в таблице расходов
     }
 
+    private void createAndConfigureBalanceTableView() {
+        balanceTableView = createBalanceTableView();
+        updateBalanceTable(); // Метод для обновления данных в таблице баланса
+    }
+
     private void openChartsWindow() {
         // Create a new Stage for the analytical tools window
         Stage chartsStage = new Stage();
@@ -296,7 +294,8 @@ public class FinanceManagerApp extends Application {
         ComboBox<String> chartSelector = new ComboBox<>();
         chartSelector.setPromptText("Оберіть тип");
         ObservableList<String> chartOptions = FXCollections.observableArrayList(
-                "Pie Chart", "Line Chart", "Bar Chart", "Scatter Chart", "Income Table", "Expense Table");
+                "Pie Chart", "Line Chart", "Bar Chart", "Scatter Chart",
+                "Income Table", "Expense Table", "Balance Table");
         chartSelector.setItems(chartOptions);
 
         // Add an event handler for the ComboBox selection
@@ -318,22 +317,23 @@ public class FinanceManagerApp extends Application {
                 chartBox.getChildren().add(scatterChart);
             } else if ("Income Table".equals(selectedOption)) {
                 createAndConfigureIncomeCategoryTableView();
-                Label incomeLabel = new Label("Таблиця прибутку"); // Создаем лейбл для таблицы прибыли
-                chartBox.getChildren().add(incomeLabel); // Добавляем лейбл в chartBox
+                Label incomeLabel = new Label("Таблиця прибутку");
                 incomeLabel.setStyle("-fx-font-size: 18;");
-                chartBox.getChildren().add(incomeCategoryTableView); // Добавляем таблицу в chartBox
                 incomeTotalLabel.setStyle("-fx-font-size: 16;");
-                chartBox.getChildren().add(incomeTotalLabel); // Добавляем лейбл для прибыли
+                chartBox.getChildren().addAll(incomeLabel, incomeCategoryTableView, incomeTotalLabel);
             } else if ("Expense Table".equals(selectedOption)) {
                 createAndConfigureExpenseCategoryTableView();
-                Label expenseLabel = new Label("Таблиця витрат"); // Создаем лейбл для таблицы расходов
+                Label expenseLabel = new Label("Таблиця витрат");
                 expenseLabel.setStyle("-fx-font-size: 18;");
-                chartBox.getChildren().add(expenseLabel); // Добавляем лейбл в chartBox
-                chartBox.getChildren().add(expenseCategoryTableView); // Добавляем таблицу в chartBox
                 expenseTotalLabel.setStyle("-fx-font-size: 16;");
-                chartBox.getChildren().add(expenseTotalLabel); // Добавляем лейбл для расходов
+                chartBox.getChildren().addAll(expenseLabel, expenseCategoryTableView, expenseTotalLabel);
+            } else if ("Balance Table".equals(selectedOption)) {
+                createAndConfigureBalanceTableView();
+                Label balanceLabel = new Label("Річна таблиця загальних сум");
+                balanceLabel.setStyle("-fx-font-size: 18;");
+                chartBox.getChildren().addAll(balanceLabel, balanceTableView);
+            }
 
-        }
         });
 
         // Add chart containers to the main layout
@@ -349,6 +349,7 @@ public class FinanceManagerApp extends Application {
         // Open the window
         chartsStage.show();
     }
+
 
     private Transaction createTransactionFromRecord(TransactionRecord transactionRecord) {
         LocalDate date = transactionRecord.getDate();
@@ -633,19 +634,6 @@ public class FinanceManagerApp extends Application {
         barChart.getData().addAll(expenseSeries, incomeSeries); // Добавляем новые данные
     }
 
-    private void updateBalanceTable() {
-        BalanceCategory totalBalanceCategory = new BalanceCategory("Баланс");
-        double totalIncome = calculateTotalIncome();
-        double totalExpense = calculateTotalExpense();
-        double totalBalance = totalIncome - totalExpense;
-
-        totalBalanceCategory.setTotalIncome(totalIncome);
-        totalBalanceCategory.setTotalExpense(totalExpense);
-        totalBalanceCategory.setTotalBalance(totalBalance);
-
-        ObservableList<BalanceCategory> balanceData = FXCollections.observableArrayList(totalBalanceCategory);
-        balanceTableView.setItems(balanceData);
-    }
 
     private String getUserInfo() {
         TextInputDialog dialog = new TextInputDialog();
@@ -907,54 +895,67 @@ public class FinanceManagerApp extends Application {
         TableView<BalanceCategory> tableView = new TableView<>();
         tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
-        TableColumn<BalanceCategory, String> categoryColumn = new TableColumn<>("Категорія");
+        TableColumn<BalanceCategory, String> categoryColumn = new TableColumn<>("Місяць");
         categoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
 
-        TableColumn<BalanceCategory, Double> incomeColumn = new TableColumn<>("Прибуток");
+        TableColumn<BalanceCategory, Double> incomeColumn = new TableColumn<>("Дохід");
         incomeColumn.setCellValueFactory(new PropertyValueFactory<>("totalIncome"));
-        incomeColumn.setCellFactory(tc -> new TableCell<>() {
-            @Override
-            protected void updateItem(Double income, boolean empty) {
-                super.updateItem(income, empty);
-                if (empty || income == null) {
-                    setText(null);
-                } else {
-                    setText(String.format("%.2f", income));
-                }
-            }
-        });
 
-        TableColumn<BalanceCategory, Double> expenseColumn = new TableColumn<>("Витрати");
+        TableColumn<BalanceCategory, Double> expenseColumn = new TableColumn<>("Витрата");
         expenseColumn.setCellValueFactory(new PropertyValueFactory<>("totalExpense"));
-        expenseColumn.setCellFactory(tc -> new TableCell<>() {
-            @Override
-            protected void updateItem(Double expense, boolean empty) {
-                super.updateItem(expense, empty);
-                if (empty || expense == null) {
-                    setText(null);
-                } else {
-                    setText(String.format("%.2f", expense));
-                }
-            }
-        });
 
         TableColumn<BalanceCategory, Double> balanceColumn = new TableColumn<>("Баланс");
         balanceColumn.setCellValueFactory(new PropertyValueFactory<>("totalBalance"));
-        balanceColumn.setCellFactory(tc -> new TableCell<>() {
-            @Override
-            protected void updateItem(Double balance, boolean empty) {
-                super.updateItem(balance, empty);
-                if (empty || balance == null) {
-                    setText(null);
-                } else {
-                    setText(String.format("%.2f", balance));
-                }
-            }
-        });
 
         tableView.getColumns().addAll(categoryColumn, incomeColumn, expenseColumn, balanceColumn);
+
         return tableView;
     }
+
+    private void updateBalanceTable() {
+        if (transactionHistoryTableView.getItems() == null) {
+            return;
+        }
+
+        List<BalanceCategory> monthBalanceCategories = new ArrayList<>();
+
+        List<String> monthLabels = Arrays.asList("Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+                "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень");
+
+        for (int i = 0; i < 12; i++) {
+            double totalIncomeForMonth = calculateTotalIncomeForMonth(i + 1);
+            double totalExpenseForMonth = calculateTotalExpenseForMonth(i + 1);
+            double totalBalanceForMonth = totalIncomeForMonth - totalExpenseForMonth;
+
+            BalanceCategory monthBalanceCategory = new BalanceCategory(monthLabels.get(i));
+            monthBalanceCategory.setTotalIncome(totalIncomeForMonth);
+            monthBalanceCategory.setTotalExpense(totalExpenseForMonth);
+            monthBalanceCategory.setTotalBalance(totalBalanceForMonth);
+
+            monthBalanceCategories.add(monthBalanceCategory);
+        }
+
+        // Очищаем и обновляем данные в таблице баланса
+        balanceTableView.getItems().setAll(monthBalanceCategories);
+    }
+
+    private double calculateTotalIncomeForMonth(int month) {
+        List<Transaction> transactions = transactionHistoryTableView.getItems();
+        return transactions.stream()
+                .filter(transaction -> transaction.getMonth() == month && "Прибуток".equals(transaction.getCategory()))
+                .mapToDouble(Transaction::getAmount)
+                .sum();
+    }
+
+    private double calculateTotalExpenseForMonth(int month) {
+        List<Transaction> transactions = transactionHistoryTableView.getItems();
+        return transactions.stream()
+                .filter(transaction -> transaction.getMonth() == month && "Витрата".equals(transaction.getCategory()))
+                .mapToDouble(Transaction::getAmount)
+                .sum();
+    }
+
+
 
     public static class Transaction {
         private final LocalDateTime dateTime;
@@ -1005,6 +1006,11 @@ public class FinanceManagerApp extends Application {
             return formattedDateTime + " - Категорія: " + category + " - Підкатегорія: " + subcategory + ", Сума: "
                     + amount + ", Опис: " + description;
         }
+
+
+        public int getMonth() {
+            return dateTime.getMonthValue();
+        }
     }
 
 
@@ -1039,6 +1045,7 @@ public class FinanceManagerApp extends Application {
     }
 
     public static class BalanceCategory {
+        private List<Transaction> transactions;
         private String category;
         private double totalIncome;
         private double totalExpense;
@@ -1046,6 +1053,17 @@ public class FinanceManagerApp extends Application {
 
         public BalanceCategory(String category) {
             this.category = category;
+        }
+
+        public void setTransactions(List<Transaction> transactions) {
+            this.transactions = transactions;
+        }
+
+        public Double getTotalAmountForMonth(int month, List<Transaction> transactions) {
+            return transactions.stream()
+                    .filter(transaction -> transaction.getMonth() == month)
+                    .mapToDouble(Transaction::getAmount)
+                    .sum();
         }
 
         public String getCategory() {
@@ -1078,6 +1096,13 @@ public class FinanceManagerApp extends Application {
 
         public void setTotalBalance(double totalBalance) {
             this.totalBalance = totalBalance;
+        }
+
+        public Double getTotalAmountForMonth(int month) {
+            return transactions.stream()
+                    .filter(transaction -> transaction.getMonth() == month)
+                    .mapToDouble(Transaction::getAmount)
+                    .sum();
         }
     }
 
