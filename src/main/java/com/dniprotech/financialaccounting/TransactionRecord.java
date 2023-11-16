@@ -38,7 +38,7 @@ public class TransactionRecord {
                 return new TransactionRecord(date, time, category, subcategory, amount, description);
             }
         }
-        return null; // В случае ошибки разбора строки
+        return null;
     }
 
     public LocalDate getDate() {

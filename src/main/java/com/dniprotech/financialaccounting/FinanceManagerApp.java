@@ -38,10 +38,16 @@ public class FinanceManagerApp extends Application {
     private TableView<Transaction> transactionHistoryTableView;
     private TableView<BalanceCategory> balanceTableView;
     private PieChart pieChart;
+    private TableView<Transaction> incomeCategoryTableView;
+    private TableView<Transaction> expenseCategoryTableView;
+
     private LineChart<String, Number> lineChart;
     private BarChart<String, Number> barChart;
     private ScatterChart<String, Number> scatterChart;
     private TextField timeField; // Добавляем TextField для ввода времени
+    private Label incomeTotalLabel = new Label();
+    private Label expenseTotalLabel = new Label();
+
 
     public static void main(String[] args) {
         launch(args);
@@ -224,11 +230,10 @@ public class FinanceManagerApp extends Application {
 
     private void createAndConfigurePieChart() {
         pieChart = new PieChart();
-        pieChart.setTitle("Розподіл витрат за категоріями");
-
-        // Initialize the pieChart data or configure it as needed
-        updatePieChart(); // You can configure the pieChart data in the updatePieChart method
+        pieChart.setTitle("Розподіл за категоріями");
+        updatePieChart();
     }
+
 
     private void createAndConfigureLineChart() {
         CategoryAxis xAxis = new CategoryAxis();
@@ -248,7 +253,7 @@ public class FinanceManagerApp extends Application {
         barChart = createBarChart();
 
         // Настройте barChart по желанию, установив заголовок и метки осей
-        barChart.setTitle("График баланса");
+        barChart.setTitle("Графiк балансy");
         barChart.getXAxis().setLabel("Дата");
         barChart.getYAxis().setLabel("Баланс");
 
@@ -258,14 +263,22 @@ public class FinanceManagerApp extends Application {
     private void createAndConfigureScatterChart() {
         scatterChart = createScatterChart();
 
-        // Настройте scatterChart по желанию, установив заголовок и метки осей
-        scatterChart.setTitle("Scatter Chart");
+        scatterChart.setTitle("Точкова діаграма");
         scatterChart.getXAxis().setLabel("Підкатегорії");
         scatterChart.getYAxis().setLabel("Прибуток та витрати");
         scatterChart.setLegendVisible(false);
         updateScatterChart(scatterChart);
     }
 
+    private void createAndConfigureIncomeCategoryTableView() {
+        incomeCategoryTableView = createIncomeCategoryTableView();
+        updateIncomeCategoryTable(); // Метод для обновления данных в таблице прибыли
+    }
+
+    private void createAndConfigureExpenseCategoryTableView() {
+        expenseCategoryTableView = createExpenseCategoryTableView();
+        updateExpenseCategoryTable(); // Метод для обновления данных в таблице расходов
+    }
 
     private void openChartsWindow() {
         // Create a new Stage for the analytical tools window
@@ -279,29 +292,48 @@ public class FinanceManagerApp extends Application {
         VBox chartBox = new VBox(20);
         chartBox.setAlignment(Pos.CENTER);
 
-        // Create a ComboBox for chart selection
+        // Create a ComboBox for chart and table selection
         ComboBox<String> chartSelector = new ComboBox<>();
         chartSelector.setPromptText("Оберіть тип");
-        ObservableList<String> chartOptions = FXCollections.observableArrayList("Pie Chart", "Line Chart", "Bar Chart", "Scatter Chart");
+        ObservableList<String> chartOptions = FXCollections.observableArrayList(
+                "Pie Chart", "Line Chart", "Bar Chart", "Scatter Chart", "Income Table", "Expense Table");
         chartSelector.setItems(chartOptions);
 
         // Add an event handler for the ComboBox selection
         chartSelector.setOnAction(event -> {
-            String selectedChart = chartSelector.getValue();
-            chartBox.getChildren().clear(); // Clear existing chart
-            if ("Pie Chart".equals(selectedChart)) {
+            String selectedOption = chartSelector.getValue();
+            chartBox.getChildren().clear(); // Clear existing chart or table
+
+            if ("Pie Chart".equals(selectedOption)) {
                 createAndConfigurePieChart();
                 chartBox.getChildren().add(pieChart);
-            } else if ("Line Chart".equals(selectedChart)) {
+            } else if ("Line Chart".equals(selectedOption)) {
                 createAndConfigureLineChart();
                 chartBox.getChildren().add(lineChart);
-            } else if ("Bar Chart".equals(selectedChart)) {
+            } else if ("Bar Chart".equals(selectedOption)) {
                 createAndConfigureBarChart();
                 chartBox.getChildren().add(barChart);
-            } else if ("Scatter Chart".equals(selectedChart)) {
+            } else if ("Scatter Chart".equals(selectedOption)) {
                 createAndConfigureScatterChart();
                 chartBox.getChildren().add(scatterChart);
-            }
+            } else if ("Income Table".equals(selectedOption)) {
+                createAndConfigureIncomeCategoryTableView();
+                Label incomeLabel = new Label("Таблиця прибутку"); // Создаем лейбл для таблицы прибыли
+                chartBox.getChildren().add(incomeLabel); // Добавляем лейбл в chartBox
+                incomeLabel.setStyle("-fx-font-size: 18;");
+                chartBox.getChildren().add(incomeCategoryTableView); // Добавляем таблицу в chartBox
+                incomeTotalLabel.setStyle("-fx-font-size: 16;");
+                chartBox.getChildren().add(incomeTotalLabel); // Добавляем лейбл для прибыли
+            } else if ("Expense Table".equals(selectedOption)) {
+                createAndConfigureExpenseCategoryTableView();
+                Label expenseLabel = new Label("Таблиця витрат"); // Создаем лейбл для таблицы расходов
+                expenseLabel.setStyle("-fx-font-size: 18;");
+                chartBox.getChildren().add(expenseLabel); // Добавляем лейбл в chartBox
+                chartBox.getChildren().add(expenseCategoryTableView); // Добавляем таблицу в chartBox
+                expenseTotalLabel.setStyle("-fx-font-size: 16;");
+                chartBox.getChildren().add(expenseTotalLabel); // Добавляем лейбл для расходов
+
+        }
         });
 
         // Add chart containers to the main layout
@@ -318,7 +350,6 @@ public class FinanceManagerApp extends Application {
         chartsStage.show();
     }
 
-
     private Transaction createTransactionFromRecord(TransactionRecord transactionRecord) {
         LocalDate date = transactionRecord.getDate();
         LocalTime time = transactionRecord.getTime();
@@ -328,6 +359,127 @@ public class FinanceManagerApp extends Application {
         double amount = transactionRecord.getAmount();
         String description = transactionRecord.getDescription();
         return new Transaction(dateTime, category, subcategory, amount, description);
+    }
+
+    private TableView<Transaction> createIncomeCategoryTableView() {
+        TableView<Transaction> incomeCategoryTableView = new TableView<>();
+        incomeCategoryTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Transaction, LocalDateTime> incomeDateColumn = new TableColumn<>("Дата та час");
+        incomeDateColumn.setCellValueFactory(new PropertyValueFactory<>("dateTime"));
+        incomeDateColumn.setCellFactory(column -> new TableCell<>() {
+            private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+
+            @Override
+            protected void updateItem(LocalDateTime item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(formatter.format(item));
+                }
+            }
+        });
+
+        TableColumn<Transaction, String> incomeCategoryColumn = new TableColumn<>("Категорія");
+        incomeCategoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
+
+        TableColumn<Transaction, String> incomeSubcategoryColumn = new TableColumn<>("Підкатегорія");
+        incomeSubcategoryColumn.setCellValueFactory(new PropertyValueFactory<>("subcategory"));
+
+        TableColumn<Transaction, Double> incomeAmountColumn = new TableColumn<>("Сума");
+        incomeAmountColumn.setCellValueFactory(new PropertyValueFactory<>("amount"));
+        incomeAmountColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double amount, boolean empty) {
+                super.updateItem(amount, empty);
+                if (empty || amount == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", amount));
+                }
+            }
+        });
+
+        incomeCategoryTableView.getColumns().addAll(incomeDateColumn, incomeCategoryColumn, incomeSubcategoryColumn, incomeAmountColumn);
+
+        return incomeCategoryTableView;
+    }
+
+    private TableView<Transaction> createExpenseCategoryTableView() {
+        TableView<Transaction> expenseCategoryTableView = new TableView<>();
+        expenseCategoryTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        TableColumn<Transaction, LocalDateTime> expenseDateColumn = new TableColumn<>("Дата та час");
+        expenseDateColumn.setCellValueFactory(new PropertyValueFactory<>("dateTime"));
+        expenseDateColumn.setCellFactory(column -> new TableCell<>() {
+            private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+
+            @Override
+            protected void updateItem(LocalDateTime item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(formatter.format(item));
+                }
+            }
+        });
+
+        TableColumn<Transaction, String> expenseCategoryColumn = new TableColumn<>("Категорія");
+        expenseCategoryColumn.setCellValueFactory(new PropertyValueFactory<>("category"));
+
+        TableColumn<Transaction, String> expenseSubcategoryColumn = new TableColumn<>("Підкатегорія");
+        expenseSubcategoryColumn.setCellValueFactory(new PropertyValueFactory<>("subcategory"));
+
+        TableColumn<Transaction, Double> expenseAmountColumn = new TableColumn<>("Сума");
+        expenseAmountColumn.setCellValueFactory(new PropertyValueFactory<>("amount"));
+        expenseAmountColumn.setCellFactory(tc -> new TableCell<>() {
+            @Override
+            protected void updateItem(Double amount, boolean empty) {
+                super.updateItem(amount, empty);
+                if (empty || amount == null) {
+                    setText(null);
+                } else {
+                    setText(String.format("%.2f", amount));
+                }
+            }
+        });
+
+        expenseCategoryTableView.getColumns().addAll(expenseDateColumn, expenseCategoryColumn, expenseSubcategoryColumn, expenseAmountColumn);
+
+        return expenseCategoryTableView;
+    }
+
+    private void updateIncomeCategoryTable() {
+        List<Transaction> transactions = transactionHistoryTableView.getItems();
+        List<Transaction> incomeTransactions = transactions.stream()
+                .filter(transaction -> "Прибуток".equals(transaction.getCategory()))
+                .collect(Collectors.toList());
+
+        incomeCategoryTableView.getItems().clear();
+        incomeCategoryTableView.getItems().addAll(incomeTransactions);
+
+        double totalIncome = incomeTransactions.stream().mapToDouble(Transaction::getAmount).sum();
+        updateTotalLabel(incomeTotalLabel, totalIncome);
+    }
+
+    private void updateExpenseCategoryTable() {
+        List<Transaction> transactions = transactionHistoryTableView.getItems();
+        List<Transaction> expenseTransactions = transactions.stream()
+                .filter(transaction -> "Витрата".equals(transaction.getCategory()))
+                .collect(Collectors.toList());
+
+        expenseCategoryTableView.getItems().clear();
+        expenseCategoryTableView.getItems().addAll(expenseTransactions);
+
+        double totalExpense = expenseTransactions.stream().mapToDouble(Transaction::getAmount).sum();
+        updateTotalLabel(expenseTotalLabel, totalExpense);
+    }
+
+
+    private void updateTotalLabel(Label totalLabel, double totalAmount) {
+        totalLabel.setText(String.format("Загальна сума: %.2f", totalAmount));
     }
 
     public ScatterChart<String, Number> createScatterChart() {
@@ -388,6 +540,7 @@ public class FinanceManagerApp extends Application {
             scatterChart.getData().add(series);
         }
     }
+
 
     private Node createDataPointNode(Paint color) {
         Circle circle = new Circle(5); // Размер точки
@@ -624,11 +777,18 @@ public class FinanceManagerApp extends Application {
                 }
 
                 updatePieChart();
+
                 updateLineChart();
                 updateBarChart(barChart); // Обновляем столбчатую диаграмму
                 updateBalanceTable();
                 updateScatterChart(scatterChart);
                 saveTransactionToFile(currentUser, transactionInfo);
+                // Дополнительные обновления для таблиц категорий
+                if ("Прибуток".equals(operationType)) {
+                    updateIncomeCategoryTable();
+                } else if ("Витрата".equals(operationType)) {
+                    updateExpenseCategoryTable();
+                }
             }
         }
     }
@@ -971,5 +1131,6 @@ public class FinanceManagerApp extends Application {
             this.expenses = expenses;
         }
     }
+
 
 }
