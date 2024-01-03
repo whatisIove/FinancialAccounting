@@ -46,7 +46,7 @@ public class FinanceManagerApp extends Application {
     private LineChart<String, Number> lineChart;
     private BarChart<String, Number> barChart;
     private ScatterChart<String, Number> scatterChart;
-    private TextField timeField; // Добавляем TextField для ввода времени
+    private TextField timeField;
     private Label incomeTotalLabel = new Label();
     private Label expenseTotalLabel = new Label();
 
@@ -63,11 +63,9 @@ public class FinanceManagerApp extends Application {
         String userName = getUserInfo();
         currentUser = userName;
 
-        // Определяем имя файла данных пользователя на основе введенного имени
         String userDataFileName = userName + "_transactions.txt";
         System.out.println("Имя файла данных пользователя: " + userDataFileName);
-
-        // Загружаем данные пользователя, если файл существует
+        
         File userDataFile = new File(userDataFileName);
         if (userDataFile.exists()) {
             try {
@@ -107,7 +105,6 @@ public class FinanceManagerApp extends Application {
         datePicker.setPromptText("Дата");
         datePicker.setValue(LocalDate.now());
 
-        // Добавляем TextField для ввода времени
         timeField = new TextField();
         timeField.setPromptText("ЧЧ:ММ:СС");
 
@@ -174,7 +171,7 @@ public class FinanceManagerApp extends Application {
             Category category = categoryComboBox.getValue();
             String subcategory = subcategoryComboBox.getValue();
             LocalDate selectedDate = datePicker.getValue();
-            String selectedTime = timeField.getText(); // Получаем значение времени из TextField
+            String selectedTime = timeField.getText();
             LocalDateTime dateTime = selectedDate.atTime(LocalTime.parse(selectedTime));
             addTransaction(amount, category, subcategory, dateTime);
         });
@@ -185,12 +182,12 @@ public class FinanceManagerApp extends Application {
         Button openChartsButton = new Button("Аналітичні інструменти");
         openChartsButton.setOnAction(e -> openChartsWindow());
 
-        HBox buttonsBox = new HBox(10); // 10 - это отступ между кнопками
-        buttonsBox.setAlignment(Pos.CENTER); // Выравнивание по центру
+        HBox buttonsBox = new HBox(10);
+        buttonsBox.setAlignment(Pos.CENTER);
         buttonsBox.getChildren().addAll(addRecordButton, openChartsButton);
 
         transactionInputBox.getChildren().addAll(transactionLabel, amountField, datePicker, timeField,
-                categoryComboBox, subcategoryComboBox, buttonsBox); // Добавляем HBox с кнопками
+                categoryComboBox, subcategoryComboBox, buttonsBox);
         transactionInputBox.setAlignment(Pos.CENTER);
         root.setLeft(transactionInputBox);
 
@@ -234,18 +231,15 @@ public class FinanceManagerApp extends Application {
         lineChart = new LineChart<>(xAxis, yAxis);
         lineChart.setTitle("Графік балансу");
 
-        // Configure the x-axis and y-axis as needed
         xAxis.setLabel("Дата");
         yAxis.setLabel("Баланс");
 
-        // You can also initialize the lineChart data or configure it as needed
-        updateLineChart(); // You can configure the lineChart data in the updateLineChart method
+        updateLineChart();
     }
 
     private void createAndConfigureBarChart() {
         barChart = createBarChart();
 
-        // Настройте barChart по желанию, установив заголовок и метки осей
         barChart.setTitle("Графiк балансy");
         barChart.getXAxis().setLabel("Дата");
         barChart.getYAxis().setLabel("Баланс");
@@ -265,32 +259,28 @@ public class FinanceManagerApp extends Application {
 
     private void createAndConfigureIncomeCategoryTableView() {
         incomeCategoryTableView = createIncomeCategoryTableView();
-        updateIncomeCategoryTable(); // Метод для обновления данных в таблице прибыли
+        updateIncomeCategoryTable(); 
     }
 
     private void createAndConfigureExpenseCategoryTableView() {
         expenseCategoryTableView = createExpenseCategoryTableView();
-        updateExpenseCategoryTable(); // Метод для обновления данных в таблице расходов
+        updateExpenseCategoryTable();
     }
 
     private void createAndConfigureBalanceTableView() {
         balanceTableView = createBalanceTableView();
-        updateBalanceTable(); // Метод для обновления данных в таблице баланса
+        updateBalanceTable(); 
     }
 
     private void openChartsWindow() {
-        // Create a new Stage for the analytical tools window
         Stage chartsStage = new Stage();
         chartsStage.setTitle("Аналітичні інструменти");
 
-        // Create a BorderPane as the main layout
         BorderPane mainLayout = new BorderPane();
-
-        // Create VBox for the charts
+        
         VBox chartBox = new VBox(20);
         chartBox.setAlignment(Pos.CENTER);
 
-        // Create a ComboBox for chart and table selection
         ComboBox<String> chartSelector = new ComboBox<>();
         chartSelector.setPromptText("Оберіть тип");
         ObservableList<String> chartOptions = FXCollections.observableArrayList(
@@ -298,10 +288,9 @@ public class FinanceManagerApp extends Application {
                 "Income Table", "Expense Table", "Balance Table");
         chartSelector.setItems(chartOptions);
 
-        // Add an event handler for the ComboBox selection
         chartSelector.setOnAction(event -> {
             String selectedOption = chartSelector.getValue();
-            chartBox.getChildren().clear(); // Clear existing chart or table
+            chartBox.getChildren().clear(); 
 
             if ("Pie Chart".equals(selectedOption)) {
                 createAndConfigurePieChart();
@@ -336,17 +325,13 @@ public class FinanceManagerApp extends Application {
 
         });
 
-        // Add chart containers to the main layout
         mainLayout.setTop(chartSelector);
         mainLayout.setCenter(chartBox);
 
-        // Create a scene for the analytical tools window
         Scene chartsScene = new Scene(mainLayout, 800, 600);
 
-        // Set the scene for the window
         chartsStage.setScene(chartsScene);
 
-        // Open the window
         chartsStage.show();
     }
 
@@ -498,11 +483,9 @@ public class FinanceManagerApp extends Application {
         scatterChart.getData().clear();
 
         List<Transaction> transactions = transactionHistoryTableView.getItems();
-
-        // Создайте карту для отображения категорий/подкатегорий и соответствующих цветов
+        
         Map<String, Paint> categoryColors = new HashMap<>();
 
-        // Создайте карту для суммирования данных по подкатегориям
         Map<String, Double> subcategorySums = new HashMap<>();
 
         for (Transaction transaction : transactions) {
@@ -510,12 +493,10 @@ public class FinanceManagerApp extends Application {
             String subcategory = transaction.getSubcategory();
             double totalAmount = transaction.getIncome() - transaction.getExpense();
 
-            // Определите цвет для категории или подкатегории, если его еще нет
             if (!categoryColors.containsKey(subcategory)) {
                 categoryColors.put(subcategory, getRandomColor());
             }
 
-            // Суммируйте данные по подкатегории
             if (subcategorySums.containsKey(subcategory)) {
                 subcategorySums.put(subcategory, subcategorySums.get(subcategory) + totalAmount);
             } else {
@@ -523,16 +504,13 @@ public class FinanceManagerApp extends Application {
             }
         }
 
-        // Создайте серии данных на основе сумм подкатегорий
         for (Map.Entry<String, Double> entry : subcategorySums.entrySet()) {
             String subcategory = entry.getKey();
             double totalAmount = entry.getValue();
 
-            // Создайте серию данных для каждой подкатегории
             XYChart.Series<String, Number> series = new XYChart.Series<>();
             series.setName(subcategory);
 
-            // Создайте точку с соответствующим цветом для подкатегории
             XYChart.Data<String, Number> dataPoint = new XYChart.Data<>(subcategory, totalAmount);
             dataPoint.setNode(createDataPointNode(categoryColors.get(subcategory)));
 
@@ -544,8 +522,8 @@ public class FinanceManagerApp extends Application {
 
 
     private Node createDataPointNode(Paint color) {
-        Circle circle = new Circle(5); // Размер точки
-        circle.setFill(color); // Установка цвета точки
+        Circle circle = new Circle(5); 
+        circle.setFill(color);
         return circle;
     }
 
@@ -573,7 +551,7 @@ public class FinanceManagerApp extends Application {
             double balance = categoryEntry.getValue();
             double percentage = (balance / totalBalance) * 100;
             String categoryLabel = category + " (" + String.format("%.2f%%", percentage) + ")";
-            PieChart.Data categoryData = new PieChart.Data(categoryLabel, Math.abs(percentage)); // Изменено в этой строке
+            PieChart.Data categoryData = new PieChart.Data(categoryLabel, Math.abs(percentage));
             chart.getData().add(categoryData);
         }
         return chart;
@@ -591,7 +569,6 @@ public class FinanceManagerApp extends Application {
         expenseSeries.setName("Витрати");
         incomeSeries.setName("Прибуток");
 
-        // Добавьте данные в expenseSeries и incomeSeries на основе вашей транзакционной истории
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String date = transaction.getDateTime().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
             double amount = transaction.getAmount();
@@ -610,7 +587,7 @@ public class FinanceManagerApp extends Application {
     }
 
     private void updateBarChart(BarChart<String, Number> barChart) {
-        barChart.getData().clear(); // Очищаем существующие данные
+        barChart.getData().clear(); 
 
         XYChart.Series<String, Number> expenseSeries = new XYChart.Series<>();
         XYChart.Series<String, Number> incomeSeries = new XYChart.Series<>();
@@ -618,7 +595,6 @@ public class FinanceManagerApp extends Application {
         expenseSeries.setName("Витрати");
         incomeSeries.setName("Прибуток");
 
-        // Добавьте данные в expenseSeries и incomeSeries на основе вашей транзакционной истории
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String date = transaction.getDateTime().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
             double amount = transaction.getAmount();
@@ -631,7 +607,7 @@ public class FinanceManagerApp extends Application {
             }
         }
 
-        barChart.getData().addAll(expenseSeries, incomeSeries); // Добавляем новые данные
+        barChart.getData().addAll(expenseSeries, incomeSeries);
     }
 
 
@@ -651,7 +627,7 @@ public class FinanceManagerApp extends Application {
                 File userFile = new File("userdata", currentUser + "_transactions.txt");
                 if (userFile.exists()) {
                     try {
-                        loadDataFromFile(userFile); // Load the data into tables
+                        loadDataFromFile(userFile);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -694,7 +670,6 @@ public class FinanceManagerApp extends Application {
         XYChart.Series<String, Number> series = new XYChart.Series<>();
         series.setName("Баланс");
 
-        // Add data points to the series based on your transaction history
         for (Transaction transaction : transactionHistoryTableView.getItems()) {
             String date = transaction.getDateTime().toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
             double balanceChange = transaction.getAmount();
@@ -717,7 +692,6 @@ public class FinanceManagerApp extends Application {
             double balanceChange = transaction.getAmount();
             String category = transaction.getCategory();
 
-            // Adjust the cumulative balance based on the transaction category
             if ("Витрата".equals(category)) {
                 cumulativeBalance -= balanceChange;
             } else if ("Прибуток".equals(category)) {
@@ -727,8 +701,8 @@ public class FinanceManagerApp extends Application {
             series.getData().add(new XYChart.Data<>(date, cumulativeBalance));
         }
 
-        lineChart.getData().setAll(series);  // Set the new series
-        lineChart.layout();  // Force a layout update
+        lineChart.getData().setAll(series);
+        lineChart.layout(); 
     }
 
 
@@ -767,11 +741,10 @@ public class FinanceManagerApp extends Application {
                 updatePieChart();
 
                 updateLineChart();
-                updateBarChart(barChart); // Обновляем столбчатую диаграмму
+                updateBarChart(barChart); 
                 updateBalanceTable();
                 updateScatterChart(scatterChart);
                 saveTransactionToFile(currentUser, transactionInfo);
-                // Дополнительные обновления для таблиц категорий
                 if ("Прибуток".equals(operationType)) {
                     updateIncomeCategoryTable();
                 } else if ("Витрата".equals(operationType)) {
@@ -880,11 +853,11 @@ public class FinanceManagerApp extends Application {
 
         TableColumn<Transaction, String> descriptionColumn = new TableColumn<>("Опис");
         descriptionColumn.setCellValueFactory(new PropertyValueFactory<>("description"));
-        dateColumn.setPrefWidth(125); // Устанавливаем ширину столбца dateColumn
-        categoryColumn.setPrefWidth(80); // Устанавливаем ширину столбца categoryColumn
-        subcategoryColumn.setPrefWidth(125); // Устанавливаем ширину столбца subcategoryColumn
-        amountColumn.setPrefWidth(70); // Устанавливаем ширину столбца amountColumn
-        descriptionColumn.setPrefWidth(180); // Устанавливаем ширину столбца descriptionColumn
+        dateColumn.setPrefWidth(125); 
+        categoryColumn.setPrefWidth(80); 
+        subcategoryColumn.setPrefWidth(125);
+        amountColumn.setPrefWidth(70); 
+        descriptionColumn.setPrefWidth(180); 
 
 
         tableView.getColumns().addAll(dateColumn, categoryColumn, subcategoryColumn, amountColumn, descriptionColumn);
@@ -935,7 +908,6 @@ public class FinanceManagerApp extends Application {
             monthBalanceCategories.add(monthBalanceCategory);
         }
 
-        // Очищаем и обновляем данные в таблице баланса
         balanceTableView.getItems().setAll(monthBalanceCategories);
     }
 
@@ -954,8 +926,6 @@ public class FinanceManagerApp extends Application {
                 .mapToDouble(Transaction::getAmount)
                 .sum();
     }
-
-
 
     public static class Transaction {
         private final LocalDateTime dateTime;
